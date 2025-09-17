@@ -43,3 +43,9 @@ app.*.map.json
 /android/app/debug
 /android/app/profile
 /android/app/release
+# Platform-specific generated/ephemeral files
+linux/flutter/ephemeral/
+macos/Flutter/ephemeral/
+windows/flutter/ephemeral/
+
+android/build/reports/problems/problems-report.html
