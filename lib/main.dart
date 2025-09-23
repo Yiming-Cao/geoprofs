@@ -1,5 +1,5 @@
 import 'package:flutter/material.dart';
-import 'dashboard.dart';
+import 'package:geoprof/dashboard.dart';
 
 void main() {
   runApp(const MyApp());
@@ -11,26 +11,24 @@ class MyApp extends StatelessWidget {
   @override
   Widget build(BuildContext context) {
     return MaterialApp(
-      title: 'Flutter Demo',
-      debugShowCheckedModeBanner: false,
-      theme: ThemeData(
-        colorScheme: ColorScheme.fromSeed(seedColor: Colors.deepPurple),
-      ),
-      home: const MyHomePage(title: 'Flutter Demo Home Page'),
+      title: 'GeoProfs',
+      initialRoute: '/',
+      routes: {
+        '/': (context) => const HomeScreen(),
+        '/dashboard': (context) => const Dashboard(),
+      },
     );
   }
 }
 
-class MyHomePage extends StatefulWidget {
-  const MyHomePage({super.key, required this.title});
-
-  final String title;
+class HomeScreen extends StatefulWidget {
+  const HomeScreen({super.key});
 
   @override
-  State<MyHomePage> createState() => _MyHomePageState();
+  State<HomeScreen> createState() => _HomeScreenState();
 }
 
-class _MyHomePageState extends State<MyHomePage> {
+class _HomeScreenState extends State<HomeScreen> {
   int _counter = 0;
 
   void _incrementCounter() {
@@ -42,7 +40,7 @@ class _MyHomePageState extends State<MyHomePage> {
   @override
   Widget build(BuildContext context) {
     return Scaffold(
-      backgroundColor: Colors.transparent, // gradient will show
+      backgroundColor: Colors.transparent,  
       body: Container(
         width: double.infinity,
         height: double.infinity,
@@ -51,15 +49,14 @@ class _MyHomePageState extends State<MyHomePage> {
             begin: Alignment.topCenter,
             end: Alignment.bottomCenter,
             colors: [
-              Color(0xFFEE6055), // top reddish
-              Color(0xFFFFFFFF), // white
+              Color(0xFFEE6055),
+              Color(0xFFFFFFFF),
             ],
-            stops: [0.25, 1.0], // red ends at 20%
+            stops: [0.25, 1.0],
           ),
         ),
         child: Column(
           children: [
-            // 🔹 Custom Top Bar with Logo
             SafeArea(
               child: Padding(
                 padding: const EdgeInsets.symmetric(vertical: 12),
@@ -72,13 +69,12 @@ class _MyHomePageState extends State<MyHomePage> {
               ),
             ),
 
-            // 🔹 Main Content
             Expanded(
               child: Center(
                 child: Column(
                   mainAxisAlignment: MainAxisAlignment.center,
                   children: <Widget>[
-                    const Text('You have pushed the button this many times:'),
+                    Text('You have pushed the button ${_counter > 100 ? 'too' : 'this'} many times:'),
                     Text(
                       '$_counter',
                       style: Theme.of(context).textTheme.headlineMedium,
@@ -86,13 +82,9 @@ class _MyHomePageState extends State<MyHomePage> {
                     const SizedBox(height: 20),
                     ElevatedButton(
                       onPressed: () {
-                        Navigator.push(
-                          context,
-                          MaterialPageRoute(
-                              builder: (context) => const Dashboard()),
-                        );
+                        Navigator.pushNamed(context, '/dashboard');
                       },
-                      child: const Text("Go to Dashboard"),
+                      child: const Text("Go to dashboard"),
                     ),
                   ],
                 ),
