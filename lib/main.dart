@@ -1,5 +1,5 @@
 import 'package:flutter/material.dart';
-import 'package:geoprof/dashboard.dart';
+import 'package:geoprof/pages/dashboard.dart';
 
 void main() {
   runApp(const MyApp());
