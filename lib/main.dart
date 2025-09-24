@@ -1,7 +1,16 @@
 import 'package:flutter/material.dart';
 import 'package:geoprof/pages/dashboard.dart';
+import 'package:geoprof/pages/login.dart';
+import 'package:supabase_flutter/supabase_flutter.dart';
 
-void main() {
+Future<void> main() async {
+  WidgetsFlutterBinding.ensureInitialized();
+
+  await Supabase.initialize(
+    url: 'https://jkvmrzfzmvqedynygkms.supabase.co',  // Supabase URL
+    anonKey: 'eyJhbGciOiJIUzI1NiIsInR5cCI6IkpXVCJ9.eyJpc3MiOiJzdXBhYmFzZSIsInJlZiI6Imprdm1yemZ6bXZxZWR5bnlna21zIiwicm9sZSI6ImFub24iLCJpYXQiOjE3NTgwMjQyNDEsImV4cCI6MjA3MzYwMDI0MX0.APsSFMSpz1lDBrLWMFOC05_ic1eODAdCdceoh4SBPHY',             // Supabase anon key
+  );
+
   runApp(const MyApp());
 }
 
@@ -16,6 +25,7 @@ class MyApp extends StatelessWidget {
       routes: {
         '/': (context) => const HomeScreen(),
         '/dashboard': (context) => const Dashboard(),
+        '/login': (context) => const LoginPage(),
       },
     );
   }
@@ -85,6 +95,13 @@ class _HomeScreenState extends State<HomeScreen> {
                         Navigator.pushNamed(context, '/dashboard');
                       },
                       child: const Text("Go to dashboard"),
+                    ),
+                    const SizedBox(height: 10),
+                    ElevatedButton(
+                      onPressed: () {
+                        Navigator.pushNamed(context, '/login');
+                      },
+                      child: const Text("Go to login"),
                     ),
                   ],
                 ),
