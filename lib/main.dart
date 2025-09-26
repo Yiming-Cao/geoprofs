@@ -2,6 +2,8 @@ import 'package:flutter/material.dart';
 import 'package:geoprof/pages/dashboard.dart';
 import 'package:geoprof/pages/login.dart';
 import 'package:supabase_flutter/supabase_flutter.dart';
+import 'package:flutter/foundation.dart' show defaultTargetPlatform, TargetPlatform;
+import 'package:geoprof/pages/register.dart';
 
 Future<void> main() async {
   WidgetsFlutterBinding.ensureInitialized();
@@ -26,6 +28,7 @@ class MyApp extends StatelessWidget {
         '/': (context) => const HomeScreen(),
         '/dashboard': (context) => const Dashboard(),
         '/login': (context) => const LoginPage(),
+        '/register': (context) => const RegisterPage(),
       },
     );
   }

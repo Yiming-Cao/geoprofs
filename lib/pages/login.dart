@@ -2,7 +2,6 @@ import 'package:flutter/material.dart';
 import 'package:flutter/foundation.dart' show defaultTargetPlatform, TargetPlatform;
 import 'package:supabase_flutter/supabase_flutter.dart';
 
-
 class LoginPage extends StatelessWidget {
   const LoginPage({super.key});
 
@@ -185,7 +184,9 @@ class DesktopLayout extends StatelessWidget {
                             const SizedBox(height: 16),
                             Center(
                               child: TextButton(
-                                onPressed: () {},
+                                onPressed: () {
+                                  Navigator.pushNamed(context, '/register');
+                                },
                                 child: const Text(
                                   "Don't have an account yet? Sign up here",
                                   style: TextStyle(color: Colors.redAccent),
