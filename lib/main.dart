@@ -69,12 +69,25 @@ class _HomeScreenState extends State<HomeScreen> {
           children: [
             SafeArea(
               child: Padding(
-                padding: const EdgeInsets.symmetric(vertical: 12),
-                child: Center(
-                  child: Image.asset(
-                    "web/icons/geoprofs.png",
-                    height: 50,
-                  ),
+                padding: const EdgeInsets.symmetric(vertical: 12, horizontal: 12),
+                child: Row(
+                  crossAxisAlignment: CrossAxisAlignment.start,
+                  children: [
+                    Expanded(
+                      child: Center(
+                      child: Image.asset(
+                        "web/icons/geoprofs.png",
+                        height: 50,
+                      ),
+                      ),
+                    ),
+                    ElevatedButton(
+                      onPressed: () {
+                      Navigator.pushNamed(context, '/login');
+                      },
+                      child: const Text("Login"),
+                    ),
+                  ],
                 ),
               ),
             ),
@@ -84,7 +97,7 @@ class _HomeScreenState extends State<HomeScreen> {
                 child: Column(
                   mainAxisAlignment: MainAxisAlignment.center,
                   children: <Widget>[
-                    Text('You have pushed the button ${_counter > 100 ? 'too' : 'this'} many times:'),
+                    Text('You have pushed the button ${_counter > 200 ? 'too' : 'this'} many times:'),
                     Text(
                       '$_counter',
                       style: Theme.of(context).textTheme.headlineMedium,
@@ -97,12 +110,6 @@ class _HomeScreenState extends State<HomeScreen> {
                       child: const Text("Go to dashboard"),
                     ),
                     const SizedBox(height: 10),
-                    ElevatedButton(
-                      onPressed: () {
-                        Navigator.pushNamed(context, '/login');
-                      },
-                      child: const Text("Go to login"),
-                    ),
                   ],
                 ),
               ),
