@@ -1,5 +1,6 @@
 import 'package:flutter/material.dart';
 import 'package:geoprof/pages/dashboard.dart';
+import 'package:geoprof/pages/admin.dart';
 
 void main() {
   runApp(const MyApp());
@@ -16,6 +17,7 @@ class MyApp extends StatelessWidget {
       routes: {
         '/': (context) => const HomeScreen(),
         '/dashboard': (context) => const Dashboard(),
+        '/admin': (context) => const AdminPage(),
       },
     );
   }
@@ -85,6 +87,12 @@ class _HomeScreenState extends State<HomeScreen> {
                         Navigator.pushNamed(context, '/dashboard');
                       },
                       child: const Text("Go to dashboard"),
+                    ),
+                    ElevatedButton(
+                      onPressed: () {
+                        Navigator.pushNamed(context, '/admin');
+                      },
+                      child: const Text("Go to admin paged"),
                     ),
                   ],
                 ),
