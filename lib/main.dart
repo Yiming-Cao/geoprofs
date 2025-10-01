@@ -92,7 +92,7 @@ class _HomeScreenState extends State<HomeScreen> {
                       onPressed: () {
                         Navigator.pushNamed(context, '/admin');
                       },
-                      child: const Text("Go to admin paged"),
+                      child: const Text("Admin page"),
                     ),
                   ],
                 ),

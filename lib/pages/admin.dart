@@ -17,33 +17,6 @@ class AdminPage extends StatelessWidget {
         return const DesktopLayout();
       }
     }
-    // return Scaffold(
-    //   appBar: AppBar(
-    //     title: const Text('Admin Page'),
-    //   ), 
-    //   body: Center(
-    //     child: Column(
-    //       mainAxisAlignment: MainAxisAlignment.center,
-    //       children: [
-    //         const Text(
-    //           'Welkom op de admin pagina',
-    //           style: TextStyle(fontSize: 24),
-    //         ),
-    //         const SizedBox(height: 32),
-    //         ElevatedButton(
-    //           onPressed: () {
-    //             Navigator.of(context).push(
-    //               MaterialPageRoute(
-    //                 builder: (context) => const AuditTrailPage(),
-    //               ),
-    //             );
-    //           },
-    //           child: const Text('Bekijk Audit Trail'),
-    //         ),
-    //       ],
-    //     ),
-    //   ),
-    // );
   }
 }
 
@@ -53,27 +26,9 @@ class AuditTrailPage extends StatelessWidget {
   @override
   Widget build(BuildContext context) {
     // voorbeeld data 
-    final List<Map<String, String>> auditTrail = [
-      {'user': 'admin', 'action': 'Ingelogd', 'timestamp': '2024-06-10 09:00'},
-      {'user': 'user1', 'action': 'Data gewijzigd', 'timestamp': '2024-06-10 09:05'},
-      {'user': 'admin', 'action': 'Gebruiker toegevoegd', 'timestamp': '2024-06-10 09:10'},
-    ];
 
     return Scaffold(
-      appBar: AppBar(
-        title: const Text('Audit Trail'),
-      ),
-      body: ListView.builder(
-        itemCount: auditTrail.length,
-        itemBuilder: (context, index) {
-          final entry = auditTrail[index];
-          return ListTile(
-            leading: const Icon(Icons.history),
-            title: Text('${entry['user']} - ${entry['action']}'),
-            subtitle: Text(entry['timestamp'] ?? ''),
-          );
-        },
-      ),
+      
     );
   }
 }
@@ -97,20 +52,60 @@ class MobileLayout extends StatelessWidget {
   }
 }
 
-class DesktopLayout extends StatelessWidget {
+class DesktopLayout extends StatefulWidget {
   const DesktopLayout({super.key});
 
   @override
+  State<DesktopLayout> createState() => _DesktopLayoutState();
+}
+
+class _DesktopLayoutState extends State<DesktopLayout> {
+  int _selectedIndex = 0;
+
+  @override
   Widget build(BuildContext context) {
+    Widget content;
+    switch (_selectedIndex) {
+      case 1:
+        content = const AuditTrailPage();
+        break;
+      default:
+        content = const Center(
+          child: Text(
+            'Welkom op de admin pagina (desktop)',
+            style: TextStyle(fontSize: 24),
+          ),
+        );
+    }
+
     return Scaffold(
       appBar: AppBar(
         title: const Text('Admin Page - Desktop'),
       ),
-      body: const Center(
-        child: Text(
-          'This is the desktop layout for the Admin Page.',
-          style: TextStyle(fontSize: 18),
-        ),
+      body: Row(
+        children: [
+          NavigationRail(
+            selectedIndex: _selectedIndex,
+            onDestinationSelected: (int index) {
+              setState(() {
+                _selectedIndex = index;
+              });
+            },
+            labelType: NavigationRailLabelType.all,
+            destinations: const [
+              NavigationRailDestination(
+                icon: Icon(Icons.home),
+                label: Text('Home'),
+              ),
+              NavigationRailDestination(
+                icon: Icon(Icons.history),
+                label: Text('Audit Trail'),
+              ),
+            ],
+          ),
+          const VerticalDivider(thickness: 1, width: 1),
+          Expanded(child: content),
+        ],
       ),
     );
   }
