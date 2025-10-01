@@ -7,8 +7,8 @@ class LoginPage extends StatelessWidget {
 
   @override
   Widget build(BuildContext context) {
-    if (defaultTargetPlatform == TargetPlatform.android || 
-    defaultTargetPlatform == TargetPlatform.iOS) {
+    if (defaultTargetPlatform == TargetPlatform.android ||
+        defaultTargetPlatform == TargetPlatform.iOS) {
       return const MobileLayout();
     } else {
       return const DesktopLayout();
@@ -30,11 +30,11 @@ class MobileLayout extends StatelessWidget {
                 'Login Page',
                 style: TextStyle(fontSize: 24),
               ),
-              ElevatedButton(
+              IconButton(
+                icon: const Icon(Icons.arrow_back),
                 onPressed: () {
                   Navigator.pushNamed(context, '/');
                 },
-                child: const Text('Back to Home'),
               ),
             ],
           ),
@@ -74,13 +74,27 @@ class DesktopLayout extends StatelessWidget {
                       mainAxisSize: MainAxisSize.min,
                       crossAxisAlignment: CrossAxisAlignment.start,
                       children: [
-                        const Text(
-                          'Login',
-                          style: TextStyle(
-                            fontFamily: 'DancingScript',
-                            fontSize: 32,
-                            fontWeight: FontWeight.bold,
-                          ),
+                        Row(
+                          mainAxisAlignment: MainAxisAlignment.start,
+                          children: [
+                            IconButton(
+                              icon: const Icon(Icons.arrow_back),
+                              onPressed: () {
+                                Navigator.pushNamed(context, '/');
+                              },
+                            ),
+                            Padding(
+                              padding: const EdgeInsets.only(left: 8.0), // Adjust this value to control the gap
+                              child: const Text(
+                                'Login',
+                                style: TextStyle(
+                                  fontFamily: 'DancingScript',
+                                  fontSize: 32,
+                                  fontWeight: FontWeight.bold,
+                                ),
+                              ),
+                            ),
+                          ],
                         ),
                         const SizedBox(height: 32),
                         const Text(
@@ -160,7 +174,7 @@ class DesktopLayout extends StatelessWidget {
                             ),
                           ),
                         ),
-                      ]
+                      ],
                     ),
                   ),
                 ),
@@ -172,5 +186,3 @@ class DesktopLayout extends StatelessWidget {
     );
   }
 }
-
-        
