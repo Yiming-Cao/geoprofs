@@ -22,7 +22,13 @@ class MyApp extends StatelessWidget {
     return MaterialApp(
       title: 'GeoProfs',
       debugShowCheckedModeBanner: false,
-      home: const HomeScreen(),
+      initialRoute: '/',
+      routes: {
+        '/': (context) => const HomeScreen(),
+        '/login': (context) => const LoginPage(),
+        '/dashboard': (context) => const Dashboard(),
+        '/register': (context) => const RegisterPage(),
+      },
     );
   }
 }
@@ -35,6 +41,19 @@ class HomeScreen extends StatefulWidget {
 }
 
 class _HomeScreenState extends State<HomeScreen> {
+  int _selectedIndex = 0;
+
+  void _onItemTapped(int index) {
+    setState(() {
+      _selectedIndex = index;
+    });
+    if (index == 1) {
+      Navigator.pushNamed(context, '/login');
+    } else if (index == 2) {
+      Navigator.pushNamed(context, '/dashboard');
+    }
+  }
+
   @override
   Widget build(BuildContext context) {
     return Scaffold(

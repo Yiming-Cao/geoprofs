@@ -1,6 +1,4 @@
 import 'package:flutter/material.dart';
-import 'package:geoprof/pages/dashboard.dart';
-import 'package:geoprof/pages/login.dart';
 
 class Navbar extends StatefulWidget {
   const Navbar({super.key});
@@ -16,31 +14,10 @@ class _NavbarState extends State<Navbar> {
     setState(() {
       _selectedIndex = index;
     });
-    switch (index) {
-      case 0:
-        // TODO: Add direct route for calendar page if available
-        // Example: Navigator.push(context, MaterialPageRoute(builder: (context) => CalendarPage()));
-        break;
-      case 1:
-        Navigator.push(
-          context,
-          MaterialPageRoute(builder: (context) => const LoginPage()),
-        );
-        break;
-      case 2:
-        Navigator.push(
-          context,
-          MaterialPageRoute(builder: (context) => const Dashboard()),
-        );
-        break;
-      case 3:
-        // TODO: Add direct route for mail page if available
-        // Example: Navigator.push(context, MaterialPageRoute(builder: (context) => MailPage()));
-        break;
-      case 4:
-        // TODO: Add direct route for notifications page if available
-        // Example: Navigator.push(context, MaterialPageRoute(builder: (context) => NotificationsPage()));
-        break;
+    if (index == 1) {
+      Navigator.pushNamed(context, '/login');
+    } else if (index == 2) {
+      Navigator.pushNamed(context, '/dashboard');
     }
   }
 
