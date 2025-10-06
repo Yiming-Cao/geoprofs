@@ -108,7 +108,7 @@ class DesktopLayout extends StatelessWidget {
                           crossAxisAlignment: CrossAxisAlignment.start,
                           children: [
                             const Text(
-                              'Login',
+                              'Register',
                               style: TextStyle(
                                 fontFamily: 'DancingScript',
                                 fontSize: 32,
