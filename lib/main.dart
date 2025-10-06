@@ -22,13 +22,7 @@ class MyApp extends StatelessWidget {
     return MaterialApp(
       title: 'GeoProfs',
       debugShowCheckedModeBanner: false,
-      initialRoute: '/',
-      routes: {
-        '/': (context) => const HomeScreen(),
-        '/login': (context) => const LoginPage(),
-        '/dashboard': (context) => const Dashboard(),
-        '/register': (context) => const RegisterPage(),
-      },
+      home: const HomeScreen(),
     );
   }
 }
