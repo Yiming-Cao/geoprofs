@@ -3,6 +3,7 @@ import 'package:geoprof/pages/dashboard.dart';
 import 'package:geoprof/pages/login.dart';
 import 'package:supabase_flutter/supabase_flutter.dart';
 import 'package:geoprof/pages/register.dart';
+import './components/navbar.dart';
 
 Future<void> main() async {
   WidgetsFlutterBinding.ensureInitialized();
@@ -40,19 +41,6 @@ class HomeScreen extends StatefulWidget {
 }
 
 class _HomeScreenState extends State<HomeScreen> {
-  int _selectedIndex = 0;
-
-  void _onItemTapped(int index) {
-    setState(() {
-      _selectedIndex = index;
-    });
-    if (index == 1) {
-      Navigator.pushNamed(context, '/login');
-    } else if (index == 2) {
-      Navigator.pushNamed(context, '/dashboard');
-    }
-  }
-
   @override
   Widget build(BuildContext context) {
     return Scaffold(
@@ -97,53 +85,7 @@ class _HomeScreenState extends State<HomeScreen> {
           ],
         ),
       ),
-      floatingActionButton: Container(
-        width: MediaQuery.of(context).size.width * 0.9,
-        height: 50,
-        decoration: BoxDecoration(
-          color: Colors.black.withOpacity(0.7),
-          borderRadius: BorderRadius.circular(25),
-        ),
-        child: Row(
-          mainAxisAlignment: MainAxisAlignment.spaceEvenly,
-          crossAxisAlignment: CrossAxisAlignment.center,
-          children: [
-            IconButton(
-              icon: const Icon(Icons.calendar_today),
-              color: _selectedIndex == 0 ? const Color(0xFFEE6055) : Colors.white,
-              onPressed: () => _onItemTapped(0),
-            ),
-            IconButton(
-              icon: const Icon(Icons.person),
-              color: _selectedIndex == 1 ? const Color(0xFFEE6055) : Colors.white,
-              onPressed: () => _onItemTapped(1),
-            ),
-            Container(
-              width: 50,
-              height: 50,
-              decoration: const BoxDecoration(
-                color: Color(0xFFEE6055),
-                shape: BoxShape.circle,
-              ),
-              child: IconButton(
-                icon: const Icon(Icons.home, size: 30),
-                color: Colors.white,
-                onPressed: () => _onItemTapped(2),
-              ),
-            ),
-            IconButton(
-              icon: const Icon(Icons.mail),
-              color: _selectedIndex == 3 ? const Color(0xFFEE6055) : Colors.white,
-              onPressed: () => _onItemTapped(3),
-            ),
-            IconButton(
-              icon: const Icon(Icons.notifications),
-              color: _selectedIndex == 4 ? const Color(0xFFEE6055) : Colors.white,
-              onPressed: () => _onItemTapped(4),
-            ),
-          ],
-        ),
-      ),
+      floatingActionButton: const Navbar(),
       floatingActionButtonLocation: FloatingActionButtonLocation.centerFloat,
     );
   }
