@@ -41,18 +41,6 @@ class HomeScreen extends StatefulWidget {
 }
 
 class _HomeScreenState extends State<HomeScreen> {
-  int _selectedIndex = 0;
-
-  void _onItemTapped(int index) {
-    setState(() {
-      _selectedIndex = index;
-    });
-    if (index == 1) {
-      Navigator.pushNamed(context, '/login');
-    } else if (index == 2) {
-      Navigator.pushNamed(context, '/dashboard');
-    }
-  }
 
   @override
   Widget build(BuildContext context) {
