@@ -53,7 +53,7 @@ class MobileLayout extends StatelessWidget {
             IconButton(
               icon: const Icon(Icons.arrow_back),
               onPressed: () {
-                Navigator.pushNamed(context, '/');
+                Navigator.pushNamed(context, '/login');
               },
             ),
           ],
@@ -96,7 +96,7 @@ class _DesktopLayoutState extends State<DesktopLayout> {
       });
       return;
     }
-    
+
     if (password != confirmPassword) {
       setState(() {
         _isLoading = false;
