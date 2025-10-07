@@ -7,12 +7,31 @@ class LoginPage extends StatelessWidget {
 
   @override
   Widget build(BuildContext context) {
-    if (defaultTargetPlatform == TargetPlatform.android ||
-        defaultTargetPlatform == TargetPlatform.iOS) {
+    if (defaultTargetPlatform == TargetPlatform.android || defaultTargetPlatform == TargetPlatform.iOS) {
       return const MobileLayout();
     } else {
       return const DesktopLayout();
     }
+  }
+}
+
+final supabase = Supabase.instance.client;
+
+Future<bool> loginUser(String email, String password) async {
+  try {
+    final AuthResponse res = await supabase.auth.signInWithPassword(
+      email: email,
+      password: password,
+    );
+    final User? user = res.user;
+    if (user != null) {
+      debugPrint('Login successful: ${user.email}');
+      return true;
+    }
+    return false;
+  } catch (e) {
+    debugPrint('Error logging in: $e');
+    return false;
   }
 }
 
@@ -43,8 +62,44 @@ class MobileLayout extends StatelessWidget {
   }
 }
 
-class DesktopLayout extends StatelessWidget {
+class DesktopLayout extends StatefulWidget {
   const DesktopLayout({super.key});
+
+  @override
+  State<DesktopLayout> createState() => _DesktopLayoutState();
+}
+
+class _DesktopLayoutState extends State<DesktopLayout> {
+  final TextEditingController _emailController = TextEditingController();
+  final TextEditingController _passwordController = TextEditingController();
+  bool _isLoading = false;
+  String? _error;
+
+  Future<void> _handleLogin() async {
+    setState(() {
+      _isLoading = true;
+      _error = null;
+    });
+    if (_emailController.text.isEmpty || _passwordController.text.isEmpty) {
+      setState(() {
+        _isLoading = false;
+        _error = "Please fill in all fields";
+      });
+      return;
+    }
+    final success = await loginUser(
+      _emailController.text.trim(),
+      _passwordController.text,
+    );
+    setState(() {
+      _isLoading = false;
+      if (!success) {
+        _error = "Invalid email or password";
+      } else {
+        Navigator.pushReplacementNamed(context, '/dashboard');
+      }
+    });
+  }
 
   @override
   Widget build(BuildContext context) {
@@ -56,7 +111,7 @@ class DesktopLayout extends StatelessWidget {
             child: Padding(
               padding: const EdgeInsets.all(32.0),
               child: Image(
-                image: NetworkImage('https://jkvmrzfzmvqedynygkms.supabase.co/storage/v1/object/public/Image/welcome.png'),
+                image: NetworkImage('https://jkvmrzfzmvqedynygkms.supabase.co/storage/v1/object/public/assets/images/welcome.png'),
               ),
             ),
           ),
@@ -84,7 +139,7 @@ class DesktopLayout extends StatelessWidget {
                               },
                             ),
                             Padding(
-                              padding: const EdgeInsets.only(left: 8.0), // Adjust this value to control the gap
+                              padding: const EdgeInsets.only(left: 8.0),
                               child: const Text(
                                 'Login',
                                 style: TextStyle(
@@ -107,6 +162,7 @@ class DesktopLayout extends StatelessWidget {
                         ),
                         const SizedBox(height: 8),
                         TextField(
+                          controller: _emailController,
                           decoration: InputDecoration(
                             prefixIcon: Icon(Icons.email_outlined),
                             border: OutlineInputBorder(
@@ -125,6 +181,7 @@ class DesktopLayout extends StatelessWidget {
                         ),
                         const SizedBox(height: 8),
                         TextField(
+                          controller: _passwordController,
                           obscureText: true,
                           decoration: InputDecoration(
                             prefixIcon: Icon(Icons.lock_outline),
@@ -155,13 +212,25 @@ class DesktopLayout extends StatelessWidget {
                                 borderRadius: BorderRadius.circular(24),
                               ),
                             ),
-                            onPressed: () {},
-                            child: const Text(
-                              'Login',
-                              style: TextStyle(fontSize: 20, color: Colors.white),
-                            ),
+                            onPressed: _isLoading ? null : _handleLogin,
+                            child: _isLoading
+                                ? const CircularProgressIndicator(
+                                    valueColor: AlwaysStoppedAnimation<Color>(Colors.white),
+                                  )
+                                : const Text(
+                                    'Login',
+                                    style: TextStyle(fontSize: 20, color: Colors.white),
+                                  ),
                           ),
                         ),
+                        if (_error != null) ...[
+                          const SizedBox(height: 8),
+                          Text(
+                            _error!,
+                            style: const TextStyle(color: Colors.red),
+                          ),
+                          const SizedBox(height: 32),
+                        ],
                         const SizedBox(height: 16),
                         Center(
                           child: TextButton(
