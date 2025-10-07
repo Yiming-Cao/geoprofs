@@ -1,5 +1,7 @@
 import 'package:flutter/material.dart';
 import 'package:flutter/foundation.dart'; // Toegevoegd voor kIsWeb
+import 'package:supabase_flutter/supabase_flutter.dart';
+
 
 class AdminPage extends StatelessWidget {
   const AdminPage({super.key});
@@ -22,13 +24,48 @@ class AdminPage extends StatelessWidget {
 
 class AuditTrailPage extends StatelessWidget {
   const AuditTrailPage({super.key});
+  
+  Future<List<Map<String, dynamic>>> getLogs() async {
+    final supabase = Supabase.instance.client;
+    final response = await supabase
+      .from('logs')
+      .select('id, action, change, was, user_id, created_at')
+      .order('created_at', ascending: false);
+
+      print("Supabase response: $response");
+    return response;
+  }
 
   @override
   Widget build(BuildContext context) {
-    // voorbeeld data 
-
     return Scaffold(
-      
+      appBar: AppBar(title: const Text("Logs")),
+      body: FutureBuilder<List<Map<String, dynamic>>>(
+        future: getLogs(),
+        builder: (context, snapshot) {
+          if (snapshot.connectionState == ConnectionState.waiting) {
+            return const Center(child: CircularProgressIndicator());
+          }
+          if (snapshot.hasError) {
+            return Center(child: Text('Fout bij laden van logs'));
+          }
+          final logs = snapshot.data ?? [];
+          if (logs.isEmpty) {
+            return const Center(child: Text('Geen logs gevonden.'));
+          }
+          return ListView.builder(
+            itemCount: logs.length,
+            itemBuilder: (context, index) {
+              final log = logs[index];
+              return ListTile(
+                title: Text("${log['action'] ?? ''} (${log['change'] ?? ''})"),
+                subtitle: Text("Was: ${log['was'] ?? ''} | User: ${log['user_id'] ?? ''}"),
+                trailing: Text(log['created_at']?.toString() ?? ''),
+              );
+            },
+          );
+        },
+      ),
     );
   }
 }
@@ -61,6 +98,12 @@ class DesktopLayout extends StatefulWidget {
 
 class _DesktopLayoutState extends State<DesktopLayout> {
   int _selectedIndex = 0;
+
+    Future<List<Map<String, dynamic>>> getLogs() async {
+    final supabase = Supabase.instance.client;
+    final response = await supabase.from('logs').select();
+    return response;
+  }
 
   @override
   Widget build(BuildContext context) {
