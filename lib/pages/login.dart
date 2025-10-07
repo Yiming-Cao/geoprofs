@@ -80,7 +80,11 @@ class _DesktopLayoutState extends State<DesktopLayout> {
       _isLoading = true;
       _error = null;
     });
-    if (_emailController.text.isEmpty || _passwordController.text.isEmpty) {
+    
+    final email = _emailController.text.trim();
+    final password = _passwordController.text;
+
+    if (email.isEmpty || password.isEmpty) {
       setState(() {
         _isLoading = false;
         _error = "Please fill in all fields";
@@ -88,8 +92,8 @@ class _DesktopLayoutState extends State<DesktopLayout> {
       return;
     }
     final success = await loginUser(
-      _emailController.text.trim(),
-      _passwordController.text,
+      email,
+      password,
     );
     setState(() {
       _isLoading = false;
