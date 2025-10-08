@@ -2,6 +2,9 @@ import 'package:flutter/material.dart';
 import 'package:geoprof/pages/dashboard.dart';
 import 'package:geoprof/pages/admin.dart';
 import 'package:supabase_flutter/supabase_flutter.dart';
+import 'package:geoprof/pages/login.dart';
+import 'package:supabase_flutter/supabase_flutter.dart';
+import 'package:geoprof/pages/register.dart';
 
 Future<void> main() async {
   WidgetsFlutterBinding.ensureInitialized();
@@ -19,11 +22,14 @@ class MyApp extends StatelessWidget {
   Widget build(BuildContext context) {
     return MaterialApp(
       title: 'GeoProfs',
+      debugShowCheckedModeBanner: false,
       initialRoute: '/',
       routes: {
         '/': (context) => const HomeScreen(),
+        '/login': (context) => const LoginPage(),
         '/dashboard': (context) => const Dashboard(),
         '/admin': (context) => const AdminPage(),
+        '/register': (context) => const RegisterPage(),
       },
     );
   }
@@ -37,18 +43,23 @@ class HomeScreen extends StatefulWidget {
 }
 
 class _HomeScreenState extends State<HomeScreen> {
-  int _counter = 0;
+  int _selectedIndex = 0;
 
-  void _incrementCounter() {
+  void _onItemTapped(int index) {
     setState(() {
-      _counter++;
+      _selectedIndex = index;
     });
+    if (index == 1) {
+      Navigator.pushNamed(context, '/login');
+    } else if (index == 2) {
+      Navigator.pushNamed(context, '/dashboard');
+    }
   }
 
   @override
   Widget build(BuildContext context) {
     return Scaffold(
-      backgroundColor: Colors.transparent,  
+      backgroundColor: Colors.transparent,
       body: Container(
         width: double.infinity,
         height: double.infinity,
@@ -67,32 +78,17 @@ class _HomeScreenState extends State<HomeScreen> {
           children: [
             SafeArea(
               child: Padding(
-                padding: const EdgeInsets.symmetric(vertical: 12),
-                child: Center(
-                  child: Image.asset(
-                    "web/icons/geoprofs.png",
-                    height: 50,
-                  ),
-                ),
-              ),
-            ),
-
-            Expanded(
-              child: Center(
-                child: Column(
-                  mainAxisAlignment: MainAxisAlignment.center,
-                  children: <Widget>[
-                    Text('You have pushed the button ${_counter > 100 ? 'too' : 'this'} many times:'),
-                    Text(
-                      '$_counter',
-                      style: Theme.of(context).textTheme.headlineMedium,
-                    ),
-                    const SizedBox(height: 20),
-                    ElevatedButton(
-                      onPressed: () {
-                        Navigator.pushNamed(context, '/dashboard');
-                      },
-                      child: const Text("Go to dashboard"),
+                padding: const EdgeInsets.symmetric(vertical: 12, horizontal: 12),
+                child: Row(
+                  crossAxisAlignment: CrossAxisAlignment.start,
+                  children: [
+                    Expanded(
+                      child: Center(
+                        child: Image.asset(
+                          "web/icons/geoprofs.png",
+                          height: 50,
+                        ),
+                      ),
                     ),
                     ElevatedButton(
                       onPressed: () {
@@ -104,14 +100,60 @@ class _HomeScreenState extends State<HomeScreen> {
                 ),
               ),
             ),
+            const Expanded(
+              child: Center(),
+            ),
           ],
         ),
       ),
-      floatingActionButton: FloatingActionButton(
-        onPressed: _incrementCounter,
-        tooltip: 'Increment',
-        child: const Icon(Icons.add),
+      floatingActionButton: Container(
+        width: MediaQuery.of(context).size.width * 0.9,
+        height: 50,
+        decoration: BoxDecoration(
+          color: Colors.black.withOpacity(0.7),
+          borderRadius: BorderRadius.circular(25),
+        ),
+        child: Row(
+          mainAxisAlignment: MainAxisAlignment.spaceEvenly,
+          crossAxisAlignment: CrossAxisAlignment.center,
+          children: [
+            IconButton(
+              icon: const Icon(Icons.calendar_today),
+              color: _selectedIndex == 0 ? const Color(0xFFEE6055) : Colors.white,
+              onPressed: () => _onItemTapped(0),
+            ),
+            IconButton(
+              icon: const Icon(Icons.person),
+              color: _selectedIndex == 1 ? const Color(0xFFEE6055) : Colors.white,
+              onPressed: () => _onItemTapped(1),
+            ),
+            Container(
+              width: 50,
+              height: 50,
+              decoration: const BoxDecoration(
+                color: Color(0xFFEE6055),
+                shape: BoxShape.circle,
+              ),
+              child: IconButton(
+                icon: const Icon(Icons.home, size: 30),
+                color: Colors.white,
+                onPressed: () => _onItemTapped(2),
+              ),
+            ),
+            IconButton(
+              icon: const Icon(Icons.mail),
+              color: _selectedIndex == 3 ? const Color(0xFFEE6055) : Colors.white,
+              onPressed: () => _onItemTapped(3),
+            ),
+            IconButton(
+              icon: const Icon(Icons.notifications),
+              color: _selectedIndex == 4 ? const Color(0xFFEE6055) : Colors.white,
+              onPressed: () => _onItemTapped(4),
+            ),
+          ],
+        ),
       ),
+      floatingActionButtonLocation: FloatingActionButtonLocation.centerFloat,
     );
   }
 }

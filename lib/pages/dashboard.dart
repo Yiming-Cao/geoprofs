@@ -6,10 +6,21 @@ class Dashboard extends StatelessWidget {
   @override
   Widget build(BuildContext context) {
     return Scaffold(
-      body: const Center(
-        child: Text(
-          'Welcome to the Dashboard!',
-          style: TextStyle(fontSize: 24),
+      body: Center(
+        child: Column(
+          mainAxisAlignment: MainAxisAlignment.center,
+          children: [
+            Text(
+              'dashboard',
+              style: TextStyle(fontSize: 24),
+            ),
+            ElevatedButton(
+              onPressed: () {
+                Navigator.pushNamed(context, '/');
+              },
+              child: Text('back to home'),
+            ),
+          ],
         ),
       ),
     );
