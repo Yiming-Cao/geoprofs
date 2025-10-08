@@ -3,6 +3,7 @@ import 'package:geoprof/pages/dashboard.dart';
 import 'package:geoprof/pages/login.dart';
 import 'package:supabase_flutter/supabase_flutter.dart';
 import 'package:geoprof/pages/register.dart';
+import 'package:geoprof/pages/profile.dart';
 
 Future<void> main() async {
   WidgetsFlutterBinding.ensureInitialized();
@@ -27,6 +28,7 @@ class MyApp extends StatelessWidget {
         '/login': (context) => const LoginPage(),
         '/dashboard': (context) => const Dashboard(),
         '/register': (context) => const RegisterPage(),
+        '/profile': (context) => const ProfilePage(),
       },
     );
   }
@@ -86,6 +88,51 @@ class _HomeScreenState extends State<HomeScreen> {
                           height: 50,
                         ),
                       ),
+                    ),
+                    // login button or avatar
+                    FutureBuilder(
+                      future: Future.value(Supabase.instance.client.auth.currentUser),
+                      builder: (context, snapshot) {
+                        final user = snapshot.data;
+                        if (user == null) {
+                          // not logged in, show login button
+                          return GestureDetector(
+                            onTap: () {
+                              Navigator.pushNamed(context, '/login');
+                            },
+                            child: const Padding(
+                              padding: EdgeInsets.only(right: 8.0, top: 8.0),
+                              child: Text(
+                                'Login',
+                                style: TextStyle(
+                                  color: Colors.black,
+                                  fontSize: 18,
+                                  decoration: TextDecoration.underline,
+                                ),
+                              ),
+                            ),
+                          );
+                        } else {
+                          // logged in, show avatar
+                          final avatarUrl = user.userMetadata?['avatar_url'] as String?;
+                          final defaultAvatar =
+                              'https://jkvmrzfzmvqedynygkms.supabase.co/storage/v1/object/public/assets/images/default_avatar.png';
+                          return GestureDetector(
+                            onTap: () {
+                              Navigator.pushNamed(context, '/profile');
+                            },
+                            child: Padding(
+                              padding: const EdgeInsets.only(right: 8.0, top: 4.0),
+                              child: CircleAvatar(
+                                radius: 20,
+                                backgroundImage: NetworkImage(
+                                  avatarUrl?.isNotEmpty == true ? avatarUrl! : defaultAvatar,
+                                ),
+                              ),
+                            ),
+                          );
+                        }
+                      },
                     ),
                   ],
                 ),
