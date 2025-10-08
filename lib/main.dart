@@ -2,9 +2,8 @@ import 'package:flutter/material.dart';
 import 'package:geoprof/pages/dashboard.dart';
 import 'package:geoprof/pages/admin.dart';
 import 'package:supabase_flutter/supabase_flutter.dart';
-import 'package:geoprof/pages/homepage.dart';
+import 'package:geoprof/pages/home.dart';
 import 'package:geoprof/pages/login.dart';
-import 'package:supabase_flutter/supabase_flutter.dart';
 import 'package:geoprof/pages/register.dart';
 import 'package:geoprof/pages/profile.dart';
 
@@ -28,7 +27,7 @@ class MyApp extends StatelessWidget {
       debugShowCheckedModeBanner: false,
       initialRoute: '/',
       routes: {
-        '/': (context) => const Homepage(),
+        '/': (context) => const HomePage(),
         '/login': (context) => const LoginPage(),
         '/dashboard': (context) => const Dashboard(),
         '/admin': (context) => const AdminPage(),

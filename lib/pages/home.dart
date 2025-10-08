@@ -3,14 +3,14 @@ import 'package:geoprof/components/navbar.dart';
 import 'package:geoprof/components/header_bar.dart';
 import 'package:geoprof/components/background_container.dart';
 
-class Homepage extends StatefulWidget {
-  const Homepage({super.key});
+class HomePage extends StatefulWidget {
+  const HomePage({super.key});
 
   @override
-  State<Homepage> createState() => _HomepageState();
+  State<HomePage> createState() => _HomePageState();
 }
 
-class _HomepageState extends State<Homepage> {
+class _HomePageState extends State<HomePage> {
   @override
   Widget build(BuildContext context) {
     return Scaffold(
