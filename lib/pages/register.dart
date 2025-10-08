@@ -1,6 +1,6 @@
 import 'package:flutter/material.dart';
 import 'package:flutter/foundation.dart' show defaultTargetPlatform, TargetPlatform;
-import 'package:supabase_flutter/supabase_flutter.dart';
+import 'package:geoprof/components/auth.dart';
 
 class RegisterPage extends StatelessWidget {
   const RegisterPage({super.key});
@@ -12,27 +12,6 @@ class RegisterPage extends StatelessWidget {
     } else {
       return const DesktopLayout();
     }
-  }
-}
-
-final supabase = Supabase.instance.client;
-
-Future<bool> registerUser(String name, String email, String password) async {
-  try {
-    final AuthResponse res = await supabase.auth.signUp(
-      email: email,
-      password: password,
-      data: {'display_name': name},
-    );
-    final User? user = res.user;
-    if (user != null) {
-      debugPrint('Registered successfully: ${user.email}');
-      return true;
-    }
-    return false;
-  } catch (e) {
-    debugPrint('Error registering user: $e');
-    return false;
   }
 }
 
@@ -75,6 +54,7 @@ class _DesktopLayoutState extends State<DesktopLayout> {
   final TextEditingController _emailController = TextEditingController();
   final TextEditingController _passwordController = TextEditingController();
   final TextEditingController _confirmPasswordController = TextEditingController();
+  final supabaseAuth = SupabaseAuth();
   bool _isLoading = false;
   String? _error;
 
@@ -105,7 +85,7 @@ class _DesktopLayoutState extends State<DesktopLayout> {
       return;
     }
 
-    final success = await registerUser(name, email, password);
+    final success = await supabaseAuth.registerUser(name, email, password);
     setState(() {
       _isLoading = false;
       if (!success) {
