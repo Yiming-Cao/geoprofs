@@ -1,6 +1,7 @@
 import 'package:flutter/material.dart';
 import 'package:geoprof/components/auth.dart';
 import 'package:geoprof/pages/dashboard.dart';
+import 'package:geoprof/pages/homepage.dart';
 import 'package:geoprof/pages/login.dart';
 import 'package:supabase_flutter/supabase_flutter.dart';
 import 'package:geoprof/pages/register.dart';
@@ -30,42 +31,12 @@ class MyApp extends StatelessWidget {
       debugShowCheckedModeBanner: false,
       initialRoute: '/',
       routes: {
-        '/': (context) => const HomeScreen(),
+        '/': (context) => const Homepage(),
         '/login': (context) => const LoginPage(),
         '/dashboard': (context) => const Dashboard(),
         '/register': (context) => const RegisterPage(),
         '/profile': (context) => const ProfilePage(),
       },
-    );
-  }
-}
-
-class HomeScreen extends StatefulWidget {
-  const HomeScreen({super.key});
-
-  @override
-  State<HomeScreen> createState() => _HomeScreenState();
-}
-
-class _HomeScreenState extends State<HomeScreen> {
-  @override
-  Widget build(BuildContext context) {
-    return Scaffold(
-      backgroundColor: Colors.transparent,
-      body: BackgroundContainer(
-        child: Column(
-          children: [
-            HeaderBar(),
-            const Expanded(
-              child: Center(),
-            ),
-            Padding(
-              padding: EdgeInsets.only(bottom: 24),
-              child: Navbar(),
-            ),
-          ],
-        ),
-      ),
     );
   }
 }
