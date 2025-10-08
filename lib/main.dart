@@ -5,6 +5,11 @@ import 'package:geoprof/pages/login.dart';
 import 'package:supabase_flutter/supabase_flutter.dart';
 import 'package:geoprof/pages/register.dart';
 import 'package:geoprof/pages/profile.dart';
+import 'package:geoprof/components/navbar.dart';
+import 'package:geoprof/components/header_bar.dart';
+import 'package:geoprof/components/background_container.dart';
+
+
 
 Future<void> main() async {
   WidgetsFlutterBinding.ensureInitialized();
@@ -43,166 +48,24 @@ class HomeScreen extends StatefulWidget {
 }
 
 class _HomeScreenState extends State<HomeScreen> {
-  int _selectedIndex = 0;
-  final supabaseAuth = SupabaseAuth();
-
-  void _onItemTapped(int index) {
-    setState(() {
-      _selectedIndex = index;
-    });
-    if (index == 1) {
-      Navigator.pushNamed(context, '/login');
-    } else if (index == 2) {
-      Navigator.pushNamed(context, '/dashboard');
-    }
-  }
-
   @override
   Widget build(BuildContext context) {
     return Scaffold(
       backgroundColor: Colors.transparent,
-      body: Container(
-        width: double.infinity,
-        height: double.infinity,
-        decoration: const BoxDecoration(
-          gradient: LinearGradient(
-            begin: Alignment.topCenter,
-            end: Alignment.bottomCenter,
-            colors: [
-              Color(0xFFEE6055),
-              Color(0xFFFFFFFF),
-            ],
-            stops: [0.25, 1.0],
-          ),
-        ),
+      body: BackgroundContainer(
         child: Column(
           children: [
-            SafeArea(
-              child: Padding(
-                padding: const EdgeInsets.symmetric(vertical: 12, horizontal: 12),
-                child: Row(
-                  crossAxisAlignment: CrossAxisAlignment.start,
-                  children: [
-                    Expanded(
-                      child: Center(
-                        child: Image.asset(
-                          "web/icons/geoprofs.png",
-                          height: 50,
-                        ),
-                      ),
-                    ),
-                    // login button or avatar
-                    FutureBuilder(
-                      future: Future.value(Supabase.instance.client.auth.currentUser),
-                      builder: (context, snapshot) {
-                        final user = snapshot.data;
-                        if (user == null) {
-                          // not logged in, show login button
-                          return GestureDetector(
-                            onTap: () {
-                              Navigator.pushNamed(context, '/login');
-                            },
-                            child: const Padding(
-                              padding: EdgeInsets.only(right: 8.0, top: 8.0),
-                              child: Text(
-                                'Login',
-                                style: TextStyle(
-                                  color: Colors.black,
-                                  fontSize: 18,
-                                  decoration: TextDecoration.underline,
-                                ),
-                              ),
-                            ),
-                          );
-                        } else {
-                          // logged in, show avatar
-                          final avatarUrl = user.userMetadata?['avatar_url'] as String?;
-                          final defaultAvatar =
-                              'https://jkvmrzfzmvqedynygkms.supabase.co/storage/v1/object/public/assets/images/default_avatar.png';
-                          return Column(
-                            children: [
-                              GestureDetector(
-                                onTap: () {
-                                  Navigator.pushNamed(context, '/profile');
-                                },
-                                child: Padding(
-                                  padding: const EdgeInsets.only(right: 8.0, top: 4.0),
-                                  child: CircleAvatar(
-                                    radius: 20,
-                                    backgroundImage: NetworkImage(
-                                      avatarUrl?.isNotEmpty == true ? avatarUrl! : defaultAvatar,
-                                    ),
-                                  ),
-                                ),
-                              ),
-                              IconButton(
-                                icon: const Icon(Icons.logout),
-                                color: _selectedIndex == 0 ? const Color(0xFFEE6055) : Colors.white,
-                                onPressed: () => supabaseAuth.logoutUser(),
-                              ),
-                            ]
-                          );
-                        }
-                      },
-                    ),
-                  ],
-                ),
-              ),
-            ),
+            HeaderBar(),
             const Expanded(
               child: Center(),
             ),
-          ],
-        ),
-      ),
-      floatingActionButton: Container(
-        width: MediaQuery.of(context).size.width * 0.9,
-        height: 50,
-        decoration: BoxDecoration(
-          color: Colors.black,
-          borderRadius: BorderRadius.circular(25),
-        ),
-        child: Row(
-          mainAxisAlignment: MainAxisAlignment.spaceEvenly,
-          crossAxisAlignment: CrossAxisAlignment.center,
-          children: [
-            IconButton(
-              icon: const Icon(Icons.calendar_today),
-              color: _selectedIndex == 0 ? const Color(0xFFEE6055) : Colors.white,
-              onPressed: () => _onItemTapped(0),
-            ),
-            IconButton(
-              icon: const Icon(Icons.person),
-              color: _selectedIndex == 1 ? const Color(0xFFEE6055) : Colors.white,
-              onPressed: () => _onItemTapped(1),
-            ),
-            Container(
-              width: 50,
-              height: 50,
-              decoration: const BoxDecoration(
-                color: Color(0xFFEE6055),
-                shape: BoxShape.circle,
-              ),
-              child: IconButton(
-                icon: const Icon(Icons.home, size: 30),
-                color: Colors.white,
-                onPressed: () => _onItemTapped(2),
-              ),
-            ),
-            IconButton(
-              icon: const Icon(Icons.mail),
-              color: _selectedIndex == 3 ? const Color(0xFFEE6055) : Colors.white,
-              onPressed: () => _onItemTapped(3),
-            ),
-            IconButton(
-              icon: const Icon(Icons.notifications),
-              color: _selectedIndex == 4 ? const Color(0xFFEE6055) : Colors.white,
-              onPressed: () => _onItemTapped(4),
+            Padding(
+              padding: EdgeInsets.only(bottom: 24),
+              child: Navbar(),
             ),
           ],
         ),
       ),
-      floatingActionButtonLocation: FloatingActionButtonLocation.centerFloat,
     );
   }
 }
