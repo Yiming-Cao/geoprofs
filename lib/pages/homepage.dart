@@ -1,54 +1,34 @@
 import 'package:flutter/material.dart';
 import 'package:geoprof/components/navbar.dart';
+import 'package:geoprof/components/header_bar.dart';
+import 'package:geoprof/components/background_container.dart';
 
 class Homepage extends StatefulWidget {
   const Homepage({super.key});
 
   @override
-  State<Homepage> createState() => _HomeScreenState();
+  State<Homepage> createState() => _HomepageState();
 }
 
-class _HomeScreenState extends State<Homepage> {
+class _HomepageState extends State<Homepage> {
   @override
   Widget build(BuildContext context) {
     return Scaffold(
       backgroundColor: Colors.transparent,
-      body: Container(
-        width: double.infinity,
-        height: double.infinity,
-        decoration: const BoxDecoration(
-          gradient: LinearGradient(
-            begin: Alignment.topCenter,
-            end: Alignment.bottomCenter,
-            colors: [Color(0xFFEE6055),Color(0xFFFFFFFF)],
-            stops: [0.25, 1.0],
-          ),
-        ),
+      body: BackgroundContainer(
         child: Column(
           children: [
-            SafeArea(
-              child: Padding(
-                padding: const EdgeInsets.symmetric(vertical: 12, horizontal: 12),
-                child: Row(
-                  crossAxisAlignment: CrossAxisAlignment.start,
-                  children: [
-                    Expanded(
-                      child: Center(
-                        child: Image.asset("web/icons/geoprofs.png", height: 50,),
-                      ),
-                    ),
-                  ],
-                ),
-              ),
-            ),
+            HeaderBar(),
             const Expanded(
               child: Center(),
+            ),
+            Padding(
+              padding: EdgeInsets.only(bottom: 24),
+              child: Navbar(),
             ),
           ],
         ),
       ),
-      floatingActionButton: const Navbar(),
-      floatingActionButtonLocation: FloatingActionButtonLocation.centerFloat,
     );
   }
 }
