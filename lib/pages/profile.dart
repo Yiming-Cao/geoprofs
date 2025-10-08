@@ -1,27 +1,21 @@
 import 'package:flutter/material.dart';
 import 'package:flutter/foundation.dart' show defaultTargetPlatform, TargetPlatform;
+import 'package:geoprof/components/protected_route.dart';
 import 'package:supabase_flutter/supabase_flutter.dart';
 
 class ProfilePage extends StatelessWidget {
   const ProfilePage({super.key});
 
+  
   @override
   Widget build(BuildContext context) {
-    final user = supabase.auth.currentUser;
-    if (user == null) {
-      Future.microtask(() => Navigator.pushReplacementNamed(context, '/login'));
-      return const Scaffold(
-        body: Center(child: CircularProgressIndicator()),
-      );
-    }
-    if (defaultTargetPlatform == TargetPlatform.android || defaultTargetPlatform == TargetPlatform.iOS) {
-      return const MobileLayout();
-    } else {
-      return const DesktopLayout();
-    }
-
+    return ProtectedRoute(
+      child: (defaultTargetPlatform == TargetPlatform.android || defaultTargetPlatform == TargetPlatform.iOS) 
+        ? const MobileLayout() : const DesktopLayout(),
+    );
   }
 }
+
 
 final supabase = Supabase.instance.client;
 
