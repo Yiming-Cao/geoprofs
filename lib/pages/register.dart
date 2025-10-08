@@ -1,14 +1,13 @@
 import 'package:flutter/material.dart';
 import 'package:flutter/foundation.dart' show defaultTargetPlatform, TargetPlatform;
-import 'package:supabase_flutter/supabase_flutter.dart';
+import 'package:geoprof/components/auth.dart';
 
 class RegisterPage extends StatelessWidget {
   const RegisterPage({super.key});
 
   @override
   Widget build(BuildContext context) {
-    if (defaultTargetPlatform == TargetPlatform.android || 
-    defaultTargetPlatform == TargetPlatform.iOS) {
+    if (defaultTargetPlatform == TargetPlatform.android || defaultTargetPlatform == TargetPlatform.iOS) {
       return const MobileLayout();
     } else {
       return const DesktopLayout();
@@ -23,28 +22,79 @@ class MobileLayout extends StatelessWidget {
   Widget build(BuildContext context) {
     return Scaffold(
       body: Center(
-          child: Column(
-            mainAxisAlignment: MainAxisAlignment.center,
-            children: [
-              const Text(
-                'Register Page',
-                style: TextStyle(fontSize: 24),
-              ),
-              ElevatedButton(
-                onPressed: () {
-                  Navigator.pushNamed(context, '/');
-                },
-                child: const Text('Back to Home'),
-              ),
-            ],
-          ),
+        child: Column(
+          mainAxisAlignment: MainAxisAlignment.center,
+          children: [
+            const Text(
+              'Register Page',
+              style: TextStyle(fontSize: 24),
+            ),
+            IconButton(
+              icon: const Icon(Icons.arrow_back),
+              onPressed: () {
+                Navigator.pushNamed(context, '/login');
+              },
+            ),
+          ],
         ),
+      ),
     );
   }
 }
 
-class DesktopLayout extends StatelessWidget {
+class DesktopLayout extends StatefulWidget {
   const DesktopLayout({super.key});
+
+  @override
+  State<DesktopLayout> createState() => _DesktopLayoutState();
+}
+
+class _DesktopLayoutState extends State<DesktopLayout> {
+  final TextEditingController _nameController = TextEditingController();
+  final TextEditingController _emailController = TextEditingController();
+  final TextEditingController _passwordController = TextEditingController();
+  final TextEditingController _confirmPasswordController = TextEditingController();
+  final supabaseAuth = SupabaseAuth();
+  bool _isLoading = false;
+  String? _error;
+
+  Future<void> _handleRegister() async {
+    setState(() {
+      _isLoading = true;
+      _error = null;
+    });
+
+    final name = _nameController.text.trim();
+    final email = _emailController.text.trim();
+    final password = _passwordController.text;
+    final confirmPassword = _confirmPasswordController.text;
+
+    if (name.isEmpty || email.isEmpty || password.isEmpty || confirmPassword.isEmpty) {
+      setState(() {
+        _isLoading = false;
+        _error = "Please fill in all fields";
+      });
+      return;
+    }
+
+    if (password != confirmPassword) {
+      setState(() {
+        _isLoading = false;
+        _error = "Passwords do not match";
+      });
+      return;
+    }
+
+    final success = await supabaseAuth.registerUser(name, email, password);
+    setState(() {
+      _isLoading = false;
+      if (!success) {
+        _error = "Registration failed. Please try again.";
+      } else {
+        Navigator.pushReplacementNamed(context, '/dashboard');
+      }
+    });
+  }
 
   @override
   Widget build(BuildContext context) {
@@ -56,7 +106,7 @@ class DesktopLayout extends StatelessWidget {
             child: Padding(
               padding: const EdgeInsets.all(32.0),
               child: const Image(
-                image: NetworkImage('https://jkvmrzfzmvqedynygkms.supabase.co/storage/v1/object/public/Image/welcome.png'),
+                image: NetworkImage('https://jkvmrzfzmvqedynygkms.supabase.co/storage/v1/object/public/assets/images/welcome.png'),
               ),
             ),
           ),
@@ -74,13 +124,27 @@ class DesktopLayout extends StatelessWidget {
                       mainAxisSize: MainAxisSize.min,
                       crossAxisAlignment: CrossAxisAlignment.start,
                       children: [
-                        const Text(
-                          'Login',
-                          style: TextStyle(
-                            fontFamily: 'DancingScript',
-                            fontSize: 32,
-                            fontWeight: FontWeight.bold,
-                          ),
+                        Row(
+                          mainAxisAlignment: MainAxisAlignment.start,
+                          children: [
+                            IconButton(
+                              icon: const Icon(Icons.arrow_back),
+                              onPressed: () {
+                                Navigator.pushNamed(context, '/login');
+                              },
+                            ),
+                            const Padding(
+                              padding: EdgeInsets.only(left: 8.0),
+                              child: Text(
+                                'Register',
+                                style: TextStyle(
+                                  fontFamily: 'DancingScript',
+                                  fontSize: 32,
+                                  fontWeight: FontWeight.bold,
+                                ),
+                              ),
+                            ),
+                          ],
                         ),
                         const SizedBox(height: 32),
                         const Text(
@@ -93,6 +157,7 @@ class DesktopLayout extends StatelessWidget {
                         ),
                         const SizedBox(height: 8),
                         TextField(
+                          controller: _nameController,
                           decoration: InputDecoration(
                             prefixIcon: Icon(Icons.person_outline),
                             border: OutlineInputBorder(
@@ -111,6 +176,7 @@ class DesktopLayout extends StatelessWidget {
                         ),
                         const SizedBox(height: 8),
                         TextField(
+                          controller: _emailController,
                           decoration: InputDecoration(
                             prefixIcon: Icon(Icons.email_outlined),
                             border: OutlineInputBorder(
@@ -129,6 +195,7 @@ class DesktopLayout extends StatelessWidget {
                         ),
                         const SizedBox(height: 8),
                         TextField(
+                          controller: _passwordController,
                           obscureText: true,
                           decoration: InputDecoration(
                             prefixIcon: Icon(Icons.lock_outline),
@@ -137,7 +204,6 @@ class DesktopLayout extends StatelessWidget {
                             ),
                           ),
                         ),
-
                         const SizedBox(height: 16),
                         const Text(
                           'Confirm Password',
@@ -149,6 +215,7 @@ class DesktopLayout extends StatelessWidget {
                         ),
                         const SizedBox(height: 8),
                         TextField(
+                          controller: _confirmPasswordController,
                           obscureText: true,
                           decoration: InputDecoration(
                             prefixIcon: Icon(Icons.lock_outline),
@@ -157,7 +224,6 @@ class DesktopLayout extends StatelessWidget {
                             ),
                           ),
                         ),
-                        
                         const SizedBox(height: 16),
                         SizedBox(
                           width: double.infinity,
@@ -169,13 +235,25 @@ class DesktopLayout extends StatelessWidget {
                                 borderRadius: BorderRadius.circular(24),
                               ),
                             ),
-                            onPressed: () {},
-                            child: const Text(
-                              'Register',
-                              style: TextStyle(fontSize: 20, color: Colors.white),
-                            ),
+                            onPressed: _isLoading ? null : _handleRegister,
+                            child: _isLoading
+                                ? const CircularProgressIndicator(
+                                    valueColor: AlwaysStoppedAnimation<Color>(Colors.white),
+                                  )
+                                : const Text(
+                                    'Register',
+                                    style: TextStyle(fontSize: 20, color: Colors.white),
+                                  ),
                           ),
                         ),
+                        if (_error != null) ...[
+                          const SizedBox(height: 8),
+                          Text(
+                            _error!,
+                            style: const TextStyle(color: Colors.red),
+                          ),
+                          const SizedBox(height: 32),
+                        ],
                         const SizedBox(height: 16),
                         Center(
                           child: TextButton(
@@ -188,17 +266,15 @@ class DesktopLayout extends StatelessWidget {
                             ),
                           ),
                         ),
-                      ]
+                      ],
                     ),
                   ),
                 ),
               ),
-            ),   
+            ),
           ),
         ],
-      )
+      ),
     );
   }
 }
-
-        

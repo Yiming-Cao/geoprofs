@@ -1,9 +1,16 @@
 import 'package:flutter/material.dart';
+import 'package:geoprof/components/auth.dart';
 import 'package:geoprof/pages/dashboard.dart';
 import 'package:geoprof/pages/homepage.dart';
 import 'package:geoprof/pages/login.dart';
 import 'package:supabase_flutter/supabase_flutter.dart';
 import 'package:geoprof/pages/register.dart';
+import 'package:geoprof/pages/profile.dart';
+import 'package:geoprof/components/navbar.dart';
+import 'package:geoprof/components/header_bar.dart';
+import 'package:geoprof/components/background_container.dart';
+
+
 
 Future<void> main() async {
   WidgetsFlutterBinding.ensureInitialized();
@@ -28,6 +35,7 @@ class MyApp extends StatelessWidget {
         '/login': (context) => const LoginPage(),
         '/dashboard': (context) => const Dashboard(),
         '/register': (context) => const RegisterPage(),
+        '/profile': (context) => const ProfilePage(),
       },
     );
   }

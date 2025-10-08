@@ -27,7 +27,7 @@ class _NavbarState extends State<Navbar> {
       width: MediaQuery.of(context).size.width.clamp(280, 320), // Phone-friendly width
       height: 48,
       decoration: BoxDecoration(
-        color: Colors.black.withOpacity(0.7),
+        color: Colors.black,
         borderRadius: BorderRadius.circular(24),
       ),
       child: Row(
