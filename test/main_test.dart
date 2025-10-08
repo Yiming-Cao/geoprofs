@@ -2,6 +2,7 @@ import 'package:flutter/material.dart';
 import 'package:flutter_test/flutter_test.dart';
 import 'package:geoprof/main.dart';
 import 'package:geoprof/pages/dashboard.dart';
+import 'package:geoprof/pages/homepage.dart';
 import 'package:geoprof/pages/login.dart';
 import 'package:mockito/mockito.dart';
 
@@ -29,7 +30,7 @@ void main() {
       expect(materialApp.debugShowCheckedModeBanner, false);
 
       // Verify initial route leads to HomeScreen
-      expect(find.byType(HomeScreen), findsOneWidget);
+      expect(find.byType(Homepage), findsOneWidget);
     });
   });
 
@@ -38,7 +39,7 @@ void main() {
       // Mock image loading for Image.asset
       await tester.pumpWidget(
         MaterialApp(
-          home: const HomeScreen(),
+          home: const Homepage(),
         ),
       );
 
@@ -60,7 +61,7 @@ void main() {
     testWidgets('HomeScreen renders navigation bar with correct icons', (WidgetTester tester) async {
       await tester.pumpWidget(
         MaterialApp(
-          home: const HomeScreen(),
+          home: const Homepage(),
         ),
       );
 
@@ -83,7 +84,7 @@ void main() {
       // Build HomeScreen with mocked routes
       await tester.pumpWidget(
         MaterialApp(
-          home: const HomeScreen(),
+          home: const Homepage(),
           routes: {
             '/login': (context) => const LoginPage(),
             '/dashboard': (context) => const Dashboard(),
