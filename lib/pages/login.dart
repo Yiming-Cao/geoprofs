@@ -1,17 +1,17 @@
 import 'package:flutter/material.dart';
 import 'package:flutter/foundation.dart' show defaultTargetPlatform, TargetPlatform;
 import 'package:geoprof/components/auth.dart';
+import 'package:geoprof/components/protected_route.dart';
 
 class LoginPage extends StatelessWidget {
   const LoginPage({super.key});
 
   @override
   Widget build(BuildContext context) {
-    if (defaultTargetPlatform == TargetPlatform.android || defaultTargetPlatform == TargetPlatform.iOS) {
-      return const MobileLayout();
-    } else {
-      return const DesktopLayout();
-    }
+    return ProtectedRoute(child: 
+      (defaultTargetPlatform == TargetPlatform.android || defaultTargetPlatform == TargetPlatform.iOS) ?
+       MobileLayout() : const DesktopLayout()
+    );
   }
 }
 
