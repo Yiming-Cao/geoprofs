@@ -115,32 +115,22 @@ class _HomeScreenState extends State<HomeScreen> {
                             ),
                           );
                         } else {
-                          // logged in, show avatar
                           final avatarUrl = user.userMetadata?['avatar_url'] as String?;
                           final defaultAvatar =
                               'https://jkvmrzfzmvqedynygkms.supabase.co/storage/v1/object/public/assets/images/default_avatar.png';
-                          return Column(
-                            children: [
-                              GestureDetector(
-                                onTap: () {
-                                  Navigator.pushNamed(context, '/profile');
-                                },
-                                child: Padding(
-                                  padding: const EdgeInsets.only(right: 8.0, top: 4.0),
-                                  child: CircleAvatar(
-                                    radius: 20,
-                                    backgroundImage: NetworkImage(
-                                      avatarUrl?.isNotEmpty == true ? avatarUrl! : defaultAvatar,
-                                    ),
-                                  ),
+                          return GestureDetector(
+                            onTap: () {
+                              Navigator.pushNamed(context, '/profile');
+                            },
+                            child: Padding(
+                              padding: const EdgeInsets.only(right: 8.0, top: 4.0),
+                              child: CircleAvatar(
+                                radius: 20,
+                                backgroundImage: NetworkImage(
+                                  avatarUrl?.isNotEmpty == true ? avatarUrl! : defaultAvatar,
                                 ),
                               ),
-                              IconButton(
-                                icon: const Icon(Icons.logout),
-                                color: _selectedIndex == 0 ? const Color(0xFFEE6055) : Colors.white,
-                                onPressed: () => supabaseAuth.logoutUser(),
-                              ),
-                            ]
+                            ),
                           );
                         }
                       },
