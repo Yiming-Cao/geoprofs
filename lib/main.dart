@@ -1,14 +1,11 @@
 import 'package:flutter/material.dart';
-import 'package:geoprof/components/auth.dart';
 import 'package:geoprof/pages/dashboard.dart';
-import 'package:geoprof/pages/login.dart';
+import 'package:geoprof/pages/admin.dart';
 import 'package:supabase_flutter/supabase_flutter.dart';
+import 'package:geoprof/pages/home.dart';
+import 'package:geoprof/pages/login.dart';
 import 'package:geoprof/pages/register.dart';
 import 'package:geoprof/pages/profile.dart';
-import 'package:geoprof/components/navbar.dart';
-import 'package:geoprof/components/header_bar.dart';
-import 'package:geoprof/components/background_container.dart';
-
 
 
 Future<void> main() async {
@@ -30,42 +27,13 @@ class MyApp extends StatelessWidget {
       debugShowCheckedModeBanner: false,
       initialRoute: '/',
       routes: {
-        '/': (context) => const HomeScreen(),
+        '/': (context) => const HomePage(),
         '/login': (context) => const LoginPage(),
         '/dashboard': (context) => const Dashboard(),
+        '/admin': (context) => const AdminPage(),
         '/register': (context) => const RegisterPage(),
         '/profile': (context) => const ProfilePage(),
       },
-    );
-  }
-}
-
-class HomeScreen extends StatefulWidget {
-  const HomeScreen({super.key});
-
-  @override
-  State<HomeScreen> createState() => _HomeScreenState();
-}
-
-class _HomeScreenState extends State<HomeScreen> {
-  @override
-  Widget build(BuildContext context) {
-    return Scaffold(
-      backgroundColor: Colors.transparent,
-      body: BackgroundContainer(
-        child: Column(
-          children: [
-            HeaderBar(),
-            const Expanded(
-              child: Center(),
-            ),
-            Padding(
-              padding: EdgeInsets.only(bottom: 24),
-              child: Navbar(),
-            ),
-          ],
-        ),
-      ),
     );
   }
 }
