@@ -93,10 +93,10 @@ class _DesktopLayoutState extends State<DesktopLayout> {
         children: [
           Expanded(
             flex: 2,
-            child: Padding(
-              padding: const EdgeInsets.all(32.0),
-              child: Image(
-                image: NetworkImage('https://jkvmrzfzmvqedynygkms.supabase.co/storage/v1/object/public/assets/images/welcome.png'),
+            child: SizedBox.expand(
+              child: Image.network(
+                'https://jkvmrzfzmvqedynygkms.supabase.co/storage/v1/object/public/assets/images/welcome.png',
+                fit: BoxFit.cover,
               ),
             ),
           ),
@@ -128,7 +128,7 @@ class _DesktopLayoutState extends State<DesktopLayout> {
                               child: const Text(
                                 'Login',
                                 style: TextStyle(
-                                  fontFamily: 'DancingScript',
+                                  fontFamily: 'KaushanScript',
                                   fontSize: 32,
                                   fontWeight: FontWeight.bold,
                                 ),
@@ -140,7 +140,7 @@ class _DesktopLayoutState extends State<DesktopLayout> {
                         const Text(
                           'Email',
                           style: TextStyle(
-                            fontFamily: 'DancingScript',
+                            fontFamily: 'KaushanScript',
                             fontSize: 18,
                             fontWeight: FontWeight.bold,
                           ),
@@ -159,7 +159,7 @@ class _DesktopLayoutState extends State<DesktopLayout> {
                         const Text(
                           'Password',
                           style: TextStyle(
-                            fontFamily: 'DancingScript',
+                            fontFamily: 'KaushanScript',
                             fontSize: 18,
                             fontWeight: FontWeight.bold,
                           ),
