@@ -1,6 +1,6 @@
 import 'package:flutter/material.dart';
 import 'package:supabase_flutter/supabase_flutter.dart';
-import 'package:intl/intl.dart'; // For date formatting
+import 'package:intl/intl.dart';
 
 class Dashboard extends StatefulWidget {
   const Dashboard({super.key});
@@ -41,7 +41,7 @@ class _DashboardState extends State<Dashboard> {
           .from('verlof')
           .select('*')
           .eq('user_id', userId)
-          .order('created_at', ascending: false); // Most recent first
+          .order('created_at', ascending: false);
       setState(() {
         _requests = List<Map<String, dynamic>>.from(response);
         _isLoadingRequests = false;
@@ -73,15 +73,14 @@ class _DashboardState extends State<Dashboard> {
       return;
     }
     try {
-      // Convert YYYY-MM-DD to timestamp (ISO 8601)
       final startTimestamp = DateTime.parse('$startDate 00:00:00Z').toIso8601String();
       final endTimestamp = DateTime.parse('$endDate 00:00:00Z').toIso8601String();
       await supabase.from('verlof').insert({
         'start': startTimestamp,
         'end_time': endTimestamp,
         'type': reason,
-        'approved': false, // Default to pending (not approved)
-        'user_id': userId, // Include user details
+        'approved': false,
+        'user_id': userId,
       });
       _showSnackBar('Request submitted successfully!');
       _clearForm();
@@ -116,13 +115,12 @@ class _DashboardState extends State<Dashboard> {
     try {
       await supabase.from('verlof').delete().eq('id', requestId);
       _showSnackBar('Request cancelled successfully!');
-      _fetchRequests(); // Refresh list
+      _fetchRequests();
     } catch (e) {
       _showSnackBar('Failed to cancel request: $e', isError: true);
     }
   }
 
-  // Pick a date using DatePicker
   Future<void> _pickDate(TextEditingController controller) async {
     final DateTime? picked = await showDatePicker(
       context: context,

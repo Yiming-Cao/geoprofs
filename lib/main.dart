@@ -7,7 +7,7 @@ import 'package:geoprof/pages/login.dart';
 import 'package:geoprof/pages/register.dart';
 import 'package:geoprof/pages/profile.dart';
 
-
+// Supabase link and key
 Future<void> main() async {
   WidgetsFlutterBinding.ensureInitialized();
   await Supabase.initialize(

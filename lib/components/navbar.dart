@@ -24,7 +24,7 @@ class _NavbarState extends State<Navbar> {
   @override
   Widget build(BuildContext context) {
     return Container(
-      width: MediaQuery.of(context).size.width.clamp(280, 320), // Phone-friendly width
+      width: MediaQuery.of(context).size.width.clamp(280, 320), // Phone-friendly/responsive
       height: 48,
       decoration: BoxDecoration(
         color: Colors.black,
