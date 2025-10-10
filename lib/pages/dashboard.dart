@@ -36,14 +36,12 @@ class _DashboardState extends State<Dashboard> {
       });
       return;
     }
-
     try {
       final response = await supabase
           .from('verlof')
-          .select('id, start, end_time, type, approved')
+          .select('*')
           .eq('user_id', userId)
           .order('created_at', ascending: false); // Most recent first
-
       setState(() {
         _requests = List<Map<String, dynamic>>.from(response);
         _isLoadingRequests = false;
@@ -66,22 +64,18 @@ class _DashboardState extends State<Dashboard> {
       setState(() => _isSubmitting = false);
       return;
     }
-
     final startDate = _startDateController.text.trim();
     final endDate = _endDateController.text.trim();
     final reason = _reasonController.text.trim();
-
     if (startDate.isEmpty || endDate.isEmpty || reason.isEmpty) {
       _showSnackBar('Please fill all fields.', isError: true);
       setState(() => _isSubmitting = false);
       return;
     }
-
     try {
       // Convert YYYY-MM-DD to timestamp (ISO 8601)
       final startTimestamp = DateTime.parse('$startDate 00:00:00Z').toIso8601String();
       final endTimestamp = DateTime.parse('$endDate 00:00:00Z').toIso8601String();
-
       await supabase.from('verlof').insert({
         'start': startTimestamp,
         'end_time': endTimestamp,
@@ -89,7 +83,6 @@ class _DashboardState extends State<Dashboard> {
         'approved': false, // Default to pending (not approved)
         'user_id': userId, // Include user details
       });
-
       _showSnackBar('Request submitted successfully!');
       _clearForm();
       _fetchRequests(); // Refresh list
@@ -119,9 +112,7 @@ class _DashboardState extends State<Dashboard> {
         ],
       ),
     );
-
     if (confirm != true) return;
-
     try {
       await supabase.from('verlof').delete().eq('id', requestId);
       _showSnackBar('Request cancelled successfully!');
@@ -242,9 +233,16 @@ class _DashboardState extends State<Dashboard> {
                           itemCount: _requests.length,
                           itemBuilder: (context, index) {
                             final request = _requests[index];
-                            final approved = request['approved'] ?? false;
                             final startDate = DateTime.tryParse(request['start'] ?? '')?.toLocal();
                             final endDate = DateTime.tryParse(request['end_time'] ?? '')?.toLocal();
+                            String status;
+                            if (request['approved'] == true) {
+                              status = 'Approved';
+                            } else if (request['approved'] == false) {
+                              status = 'Pending';
+                            } else {
+                              status = 'Denied';
+                            }
                             return Card(
                               margin: const EdgeInsets.symmetric(horizontal: 16, vertical: 4),
                               child: ListTile(
@@ -252,12 +250,13 @@ class _DashboardState extends State<Dashboard> {
                                 subtitle: Column(
                                   crossAxisAlignment: CrossAxisAlignment.start,
                                   children: [
-                                    Text('Start: ${startDate != null ? DateFormat('yyyy-MM-dd').format(startDate) : 'N/A'}'),
-                                    Text('End: ${endDate != null ? DateFormat('yyyy-MM-dd').format(endDate) : 'N/A'}'),
-                                    Text('Status: ${approved ? 'Approved' : 'Pending'}'),
+                                    if (startDate != null) Text('Start: ${DateFormat('yyyy-MM-dd').format(startDate)}'),
+                                    if (endDate != null) Text('End: ${DateFormat('yyyy-MM-dd').format(endDate)}'),
+                                    Text('Status: $status'),
+                                    ...request.entries.where((entry) => entry.key != 'id' && entry.key != 'start' && entry.key != 'end_time' && entry.key != 'type' && entry.key != 'approved' && entry.key != 'user_id' && entry.key != 'created_at').map((entry) => Text('${entry.key}: ${entry.value ?? 'N/A'}')),
                                   ],
                                 ),
-                                trailing: !approved
+                                trailing: status == 'Pending'
                                     ? IconButton(
                                         icon: const Icon(Icons.cancel, color: Colors.red),
                                         onPressed: () => _cancelRequest(request['id']),
