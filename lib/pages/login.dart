@@ -1,6 +1,6 @@
 import 'package:flutter/material.dart';
 import 'package:flutter/foundation.dart' show defaultTargetPlatform, TargetPlatform;
-import 'package:supabase_flutter/supabase_flutter.dart';
+import 'package:geoprof/components/auth.dart';
 
 class LoginPage extends StatelessWidget {
   const LoginPage({super.key});
@@ -12,26 +12,6 @@ class LoginPage extends StatelessWidget {
     } else {
       return const DesktopLayout();
     }
-  }
-}
-
-final supabase = Supabase.instance.client;
-
-Future<bool> loginUser(String email, String password) async {
-  try {
-    final AuthResponse res = await supabase.auth.signInWithPassword(
-      email: email,
-      password: password,
-    );
-    final User? user = res.user;
-    if (user != null) {
-      debugPrint('Login successful: ${user.email}');
-      return true;
-    }
-    return false;
-  } catch (e) {
-    debugPrint('Error logging in: $e');
-    return false;
   }
 }
 
@@ -72,6 +52,7 @@ class DesktopLayout extends StatefulWidget {
 class _DesktopLayoutState extends State<DesktopLayout> {
   final TextEditingController _emailController = TextEditingController();
   final TextEditingController _passwordController = TextEditingController();
+  final supabaseAuth = SupabaseAuth();
   bool _isLoading = false;
   String? _error;
 
@@ -91,7 +72,7 @@ class _DesktopLayoutState extends State<DesktopLayout> {
       });
       return;
     }
-    final success = await loginUser(
+    final success = await supabaseAuth.loginUser(
       email,
       password,
     );

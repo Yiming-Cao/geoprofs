@@ -1,8 +1,12 @@
 import 'package:flutter/material.dart';
 import 'package:geoprof/pages/dashboard.dart';
-import 'package:geoprof/pages/login.dart';
+import 'package:geoprof/pages/admin.dart';
 import 'package:supabase_flutter/supabase_flutter.dart';
+import 'package:geoprof/pages/home.dart';
+import 'package:geoprof/pages/login.dart';
 import 'package:geoprof/pages/register.dart';
+import 'package:geoprof/pages/profile.dart';
+
 
 Future<void> main() async {
   WidgetsFlutterBinding.ensureInitialized();
@@ -23,128 +27,13 @@ class MyApp extends StatelessWidget {
       debugShowCheckedModeBanner: false,
       initialRoute: '/',
       routes: {
-        '/': (context) => const HomeScreen(),
+        '/': (context) => const HomePage(),
         '/login': (context) => const LoginPage(),
         '/dashboard': (context) => const Dashboard(),
+        '/admin': (context) => const AdminPage(),
         '/register': (context) => const RegisterPage(),
+        '/profile': (context) => const ProfilePage(),
       },
-    );
-  }
-}
-
-class HomeScreen extends StatefulWidget {
-  const HomeScreen({super.key});
-
-  @override
-  State<HomeScreen> createState() => _HomeScreenState();
-}
-
-class _HomeScreenState extends State<HomeScreen> {
-  int _selectedIndex = 0;
-
-  void _onItemTapped(int index) {
-    setState(() {
-      _selectedIndex = index;
-    });
-    if (index == 1) {
-      Navigator.pushNamed(context, '/login');
-    } else if (index == 2) {
-      Navigator.pushNamed(context, '/dashboard');
-    }
-  }
-
-  @override
-  Widget build(BuildContext context) {
-    return Scaffold(
-      backgroundColor: Colors.transparent,
-      body: Container(
-        width: double.infinity,
-        height: double.infinity,
-        decoration: const BoxDecoration(
-          gradient: LinearGradient(
-            begin: Alignment.topCenter,
-            end: Alignment.bottomCenter,
-            colors: [
-              Color(0xFFEE6055),
-              Color(0xFFFFFFFF),
-            ],
-            stops: [0.25, 1.0],
-          ),
-        ),
-        child: Column(
-          children: [
-            SafeArea(
-              child: Padding(
-                padding: const EdgeInsets.symmetric(vertical: 12, horizontal: 12),
-                child: Row(
-                  crossAxisAlignment: CrossAxisAlignment.start,
-                  children: [
-                    Expanded(
-                      child: Center(
-                        child: Image.asset(
-                          "web/icons/geoprofs.png",
-                          height: 50,
-                        ),
-                      ),
-                    ),
-                  ],
-                ),
-              ),
-            ),
-            const Expanded(
-              child: Center(),
-            ),
-          ],
-        ),
-      ),
-      floatingActionButton: Container(
-        width: MediaQuery.of(context).size.width * 0.9,
-        height: 50,
-        decoration: BoxDecoration(
-          color: Colors.black.withOpacity(0.7),
-          borderRadius: BorderRadius.circular(25),
-        ),
-        child: Row(
-          mainAxisAlignment: MainAxisAlignment.spaceEvenly,
-          crossAxisAlignment: CrossAxisAlignment.center,
-          children: [
-            IconButton(
-              icon: const Icon(Icons.calendar_today),
-              color: _selectedIndex == 0 ? const Color(0xFFEE6055) : Colors.white,
-              onPressed: () => _onItemTapped(0),
-            ),
-            IconButton(
-              icon: const Icon(Icons.person),
-              color: _selectedIndex == 1 ? const Color(0xFFEE6055) : Colors.white,
-              onPressed: () => _onItemTapped(1),
-            ),
-            Container(
-              width: 50,
-              height: 50,
-              decoration: const BoxDecoration(
-                color: Color(0xFFEE6055),
-                shape: BoxShape.circle,
-              ),
-              child: IconButton(
-                icon: const Icon(Icons.home, size: 30),
-                color: Colors.white,
-                onPressed: () => _onItemTapped(2),
-              ),
-            ),
-            IconButton(
-              icon: const Icon(Icons.mail),
-              color: _selectedIndex == 3 ? const Color(0xFFEE6055) : Colors.white,
-              onPressed: () => _onItemTapped(3),
-            ),
-            IconButton(
-              icon: const Icon(Icons.notifications),
-              color: _selectedIndex == 4 ? const Color(0xFFEE6055) : Colors.white,
-              onPressed: () => _onItemTapped(4),
-            ),
-          ],
-        ),
-      ),
-      floatingActionButtonLocation: FloatingActionButtonLocation.centerFloat,
     );
   }
 }
