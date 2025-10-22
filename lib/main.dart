@@ -4,7 +4,6 @@ import 'package:geoprof/pages/admin.dart';
 import 'package:supabase_flutter/supabase_flutter.dart';
 import 'package:geoprof/pages/homepage.dart';
 import 'package:geoprof/pages/login.dart';
-import 'package:supabase_flutter/supabase_flutter.dart';
 import 'package:geoprof/pages/register.dart';
 import 'package:geoprof/pages/profile.dart';
 
