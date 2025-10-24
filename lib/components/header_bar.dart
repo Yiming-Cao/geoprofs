@@ -16,10 +16,14 @@ class HeaderBar extends StatelessWidget {
           crossAxisAlignment: CrossAxisAlignment.start,
           children: [
             Expanded(
-              child: Center(
-                child: Image.asset(
-                  "web/icons/geoprofs.png",
-                  height: 50,
+              child: Align(
+                alignment: Alignment.topCenter,
+                child: Padding(
+                  padding: const EdgeInsets.only(top: 4),
+                  child: Image.asset(
+                    "web/icons/geoprofs.png",
+                    height: 50,
+                  ),
                 ),
               ),
             ),
@@ -37,9 +41,10 @@ class HeaderBar extends StatelessWidget {
                       child: Text(
                         'Login',
                         style: TextStyle(
-                          color: Colors.black,
-                          fontSize: 18,
-                          decoration: TextDecoration.underline,
+                          color: Colors.white,
+                          fontSize: 28,
+                          fontFamily: 'KaushanScript', // 使用自定义字体
+
                         ),
                       ),
                     ),
@@ -48,7 +53,7 @@ class HeaderBar extends StatelessWidget {
                   final avatarUrl = user.userMetadata?['avatar_url'] as String?;
                   final defaultAvatar =
                       'https://jkvmrzfzmvqedynygkms.supabase.co/storage/v1/object/public/assets/images/default_avatar.png';
-                  return Column(
+                  return Row(
                     children: [
                       GestureDetector(
                         onTap: () {

@@ -95,3 +95,8 @@ flutter:
   # see https://flutter.dev/to/font-from-package
   assets:
   - web/icons/geoprofs.png
+
+  fonts:
+    - family: KaushanScript
+      fonts:
+        - asset: lib/include/KaushanScript-Regular.ttf
