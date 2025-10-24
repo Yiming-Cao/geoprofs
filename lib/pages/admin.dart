@@ -29,7 +29,7 @@ class AuditTrailPage extends StatelessWidget {
     final supabase = Supabase.instance.client;
     final response = await supabase
       .from('logs')
-      .select()
+      .select('id, action, change, was, user_uuid, created_at')
       .order('created_at', ascending: false);
 
       // print("Supabase response: $response");
