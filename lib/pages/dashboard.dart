@@ -1,7 +1,7 @@
 import 'package:flutter/material.dart';
-import 'package:supabase_flutter/supabase_flutter.dart';
 import 'package:intl/intl.dart';
 import 'package:table_calendar/table_calendar.dart';
+import 'package:supabase_flutter/supabase_flutter.dart';
 
 class Dashboard extends StatefulWidget {
   const Dashboard({super.key});
@@ -555,7 +555,7 @@ class _DashboardState extends State<Dashboard> {
                                       ),
                                     ),
                                   );
-                                }).toList(),
+                                }),
                                 if (_getEventsForDay(_selectedDay!).isEmpty)
                                   const Text('No requests on this day.'),
                               ],

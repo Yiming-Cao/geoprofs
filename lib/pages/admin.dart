@@ -1,14 +1,12 @@
 import 'package:flutter/material.dart';
-import 'package:flutter/foundation.dart'; // Toegevoegd voor kIsWeb
+import 'package:flutter/foundation.dart';
 import 'package:supabase_flutter/supabase_flutter.dart';
-
 
 class AdminPage extends StatelessWidget {
   const AdminPage({super.key});
 
   @override
   Widget build(BuildContext context) {
-    // Detecteer web met kIsWeb, anders gebruik MediaQuery voor layout
     if (kIsWeb) {
       return const DesktopLayout();
     } else {
@@ -32,7 +30,7 @@ class AuditTrailPage extends StatelessWidget {
       .select('id, action, change, was, user_uuid, created_at')
       .order('created_at', ascending: false);
 
-      // print("Supabase response: $response");
+      debugPrint("Supabase response: $response");
     return response;
   }
 
@@ -96,10 +94,7 @@ class MobileLayout extends StatelessWidget {
         title: const Text('Admin Page - Mobile'),
       ),
       body: const Center(
-        child: Text(
-          'This is the mobile layout for the Admin Page.',
-          style: TextStyle(fontSize: 18),
-        ),
+        child: Text('This is the mobile layout for the Admin Page.',style: TextStyle(fontSize: 18),),
       ),
     );
   }
@@ -130,26 +125,17 @@ class _DesktopLayoutState extends State<DesktopLayout> {
         break;
       default:
         content = const Center(
-          child: Text(
-            'Welkom op de admin pagina (desktop)',
-            style: TextStyle(fontSize: 24),
-          ),
+          child: Text('Welkom op de admin pagina (desktop)',style: TextStyle(fontSize: 24),),
         );
     }
 
     return Scaffold(
-      appBar: AppBar(
-        title: const Text('Admin Page - Desktop'),
-      ),
+      appBar: AppBar(title: const Text('Admin Page - Desktop')),
       body: Row(
         children: [
           NavigationRail(
             selectedIndex: _selectedIndex,
-            onDestinationSelected: (int index) {
-              setState(() {
-                _selectedIndex = index;
-              });
-            },
+            onDestinationSelected: (int index) {setState(() {_selectedIndex = index;});},
             labelType: NavigationRailLabelType.all,
             destinations: const [
               NavigationRailDestination(
