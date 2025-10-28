@@ -5,6 +5,8 @@ import 'package:supabase_flutter/supabase_flutter.dart';
 import 'package:geoprof/components/navbar.dart';
 import 'package:geoprof/components/header_bar.dart';
 import 'package:geoprof/components/background_container.dart';
+import 'package:image_picker/image_picker.dart';
+import 'package:flutter/foundation.dart' show kIsWeb;
 
 class ProfilePage extends StatelessWidget {
   const ProfilePage({super.key});
@@ -53,10 +55,13 @@ class DesktopLayout extends StatelessWidget {
   const DesktopLayout({super.key});
 
   void _showAccountDialog(BuildContext context, dynamic user) {
-    final usernameController = TextEditingController(text: user?.userMetadata?['username'] ?? '');
+    final usernameController = TextEditingController(text: user?.userMetadata?['display_name'] ?? '');
     final emailController = TextEditingController(text: user?.email ?? '');
     final passwordController = TextEditingController();
     final confirmPasswordController = TextEditingController();
+    String? avatarUrl = user?.userMetadata?['avatar_url'];
+    final defaultAvatar =
+        'https://jkvmrzfzmvqedynygkms.supabase.co/storage/v1/object/public/assets/images/default_avatar.png';
 
     showDialog(
       context: context,
@@ -68,30 +73,67 @@ class DesktopLayout extends StatelessWidget {
               title: const Text('Account Settings'),
               content: SizedBox(
                 width: 350,
-                child: Column(
-                  mainAxisSize: MainAxisSize.min,
-                  children: [
-                    TextField(
-                      controller: usernameController,
-                      decoration: const InputDecoration(labelText: 'Username'),
-                    ),
-                    TextField(
-                      controller: emailController,
-                      decoration: const InputDecoration(labelText: 'Email'),
-                    ),
-                    TextField(
-                      controller: passwordController,
-                      decoration: const InputDecoration(labelText: 'New Password'),
-                      obscureText: true,
-                      onChanged: (_) => setState(() {}),
-                    ),
-                    if (showConfirm)
-                      TextField(
-                        controller: confirmPasswordController,
-                        decoration: const InputDecoration(labelText: 'Confirm Password'),
-                        obscureText: true,
+                child: SingleChildScrollView( // 防止溢出
+                  child: Column(
+                    mainAxisSize: MainAxisSize.min,
+                    children: [
+                      CircleAvatar(
+                        radius: 36,
+                        backgroundImage: NetworkImage(
+                          avatarUrl?.isNotEmpty == true ? avatarUrl! : defaultAvatar,
+                        ),
                       ),
-                  ],
+                      TextButton(
+                        onPressed: () async {
+                          final picker = ImagePicker();
+                          final picked = await picker.pickImage(source: ImageSource.gallery);
+                          if (picked == null) return;
+
+                          final fileName = 'avatar_${user.id}_${DateTime.now().millisecondsSinceEpoch}.png';
+                          final storagePath = 'avatars/$fileName';
+                          final supabase = Supabase.instance.client;
+
+                          try {
+                            // 统一使用 bytes 上传（兼容 Web、桌面、移动）
+                            final bytes = await picked.readAsBytes();
+                            await supabase.storage.from('assets/images').uploadBinary(storagePath, bytes);
+
+                            // 取得公开 URL 并预览
+                            final publicUrl = supabase.storage.from('assets/images').getPublicUrl(storagePath);
+                            setState(() {
+                              avatarUrl = publicUrl;
+                            });
+                          } catch (e) {
+                            ScaffoldMessenger.of(context).showSnackBar(
+                              const SnackBar(content: Text('Avatar upload failed!')),
+                            );
+                          }
+                        },
+                        child: const Text('Change Avatar'),
+                      ),
+                      const SizedBox(height: 8),
+                      TextField(
+                        controller: usernameController,
+                        decoration: const InputDecoration(labelText: 'Username'),
+                      ),
+                      TextField(
+                        controller: emailController,
+                        decoration: const InputDecoration(labelText: 'Email'),
+                      ),
+                      TextField(
+                        controller: passwordController,
+                        decoration: const InputDecoration(labelText: 'New Password'),
+                        obscureText: true,
+                        onChanged: (_) => setState(() {}),
+                      ),
+                      if (showConfirm)
+                        TextField(
+                          controller: confirmPasswordController,
+                          decoration: const InputDecoration(labelText: 'Confirm Password'),
+                          obscureText: true,
+                        ),
+                    ],
+                  ),
                 ),
               ),
               actions: [
@@ -109,7 +151,13 @@ class DesktopLayout extends StatelessWidget {
                       );
                       return;
                     }
-                    // update username
+                    // update avatar
+                    if (avatarUrl != null && avatarUrl != user?.userMetadata?['avatar_url']) {
+                      await supabase.auth.updateUser(
+                        UserAttributes(data: {'avatar_url': avatarUrl}),
+                      );
+                    }
+                    // update username/email/password...
                     if (usernameController.text.isNotEmpty &&
                         usernameController.text != user?.userMetadata?['display_name']) {
                       await supabase.auth.updateUser(
@@ -118,14 +166,12 @@ class DesktopLayout extends StatelessWidget {
                         ),
                       );
                     }
-                    // update email
                     if (emailController.text.isNotEmpty &&
                         emailController.text != user?.email) {
                       await supabase.auth.updateUser(
                         UserAttributes(email: emailController.text),
                       );
                     }
-                    // update password
                     if (passwordController.text.isNotEmpty) {
                       await supabase.auth.updateUser(
                         UserAttributes(password: passwordController.text),
