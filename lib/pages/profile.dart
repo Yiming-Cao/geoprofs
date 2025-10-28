@@ -9,7 +9,7 @@ import 'package:geoprof/components/header_bar.dart';
 import 'package:geoprof/components/background_container.dart';
 import 'package:image_picker/image_picker.dart';
 
-enum _Section { home, work, messages }
+enum _Section { home, work, leave, messages }
 
 class ProfilePage extends StatelessWidget {
   const ProfilePage({super.key});
@@ -70,46 +70,58 @@ class _DesktopLayoutState extends State<DesktopLayout> {
   List<Map<String, dynamic>> _tasks = [];
   bool _loadingTasks = false;
 
+  List<Map<String, dynamic>> _leaveRequests = [];
+  bool _loadingLeave = false;
+
   @override
   void initState() {
     super.initState();
     final user = supabase.auth.currentUser;
     _avatarUrl = user?.userMetadata?['avatar_url'] as String?;
     _loadTasks();
+    _loadLeaveRequests(); // load leave requests for sidebar test
+  }
+
+  // 兼容不同版本的 Postgrest/PostgrestFilterBuilder 的执行方法
+  Future<dynamic> _runQuery(dynamic builder) async {
+    final b = builder as dynamic;
+    // 尝试常见的方法名，顺序容错调用
+    try {
+      return await b.execute();
+    } catch (_) {}
+    try {
+      return await b.get();
+    } catch (_) {}
+    try {
+      return await b.maybeSingle();
+    } catch (_) {}
+    try {
+      return await b.single();
+    } catch (_) {}
+    // 如果传入的是 Future/已执行的结果，直接 await 它
+    if (b is Future) {
+      return await b;
+    }
+    // 最后降级返回原对象（可能是同步数据）
+    return b;
   }
 
   Future<void> _loadTasks() async {
     setState(() => _loadingTasks = true);
     try {
-      final response = await supabase.from('tasks').select();
+      final builder = supabase.from('tasks').select();
+      final response = await _runQuery(builder);
       List data = [];
 
-      // Handle different response shapes across SDK versions:
-      // - Newer SDKs may return a plain List (PostgrestList) directly.
-      // - Some SDKs or wrappers may return a Map with a 'data' field.
-      if (response == null) {
-        data = [];
-      } else if (response is List) {
-        data = List.from(response);
-      } else if (response is Map) {
-        // ensure we work with a concrete Map<String, dynamic> to safely call containsKey and index by String
-        final map = Map<String, dynamic>.from(response as Map);
-        if (map.containsKey('data')) {
-          final d = map['data'];
-          if (d is List) {
-            data = List.from(d);
-          } else if (d != null) {
-            data = [d];
-          } else {
-            data = [];
-          }
-        } else {
-          // The map itself might represent a single item (PostgrestMap)
-          data = [map];
+      if (response != null && (response.error == null)) {
+        final d = response.data ?? response;
+        if (d is List) {
+          data = List.from(d);
+        } else if (d != null) {
+          data = [d];
         }
       } else {
-        // Fallback: wrap single item responses in a list
-        data = [response];
+        data = [];
       }
 
       if (data.isNotEmpty) {
@@ -215,14 +227,11 @@ class _DesktopLayoutState extends State<DesktopLayout> {
     });
 
     try {
-      final res = await supabase.from('tasks').update({'completed': newVal}).eq('id', id);
-      if (res != null && res.error != null) {
-        // 如果后端返回错误，抛出以便在 catch 中回滚
-        throw res.error!;
-      }
+      final builder = supabase.from('tasks').update({'completed': newVal}).eq('id', id);
+      final res = await _runQuery(builder);
+      if (res != null && res.error != null) throw res.error!;
     } catch (e, st) {
       debugPrint('Toggle task complete failed: $e\n$st');
-      // revert on failure
       setState(() {
         final idx = _tasks.indexWhere((t) => t['id'] == id);
         if (idx != -1) _tasks[idx]['completed'] = !newVal;
@@ -230,6 +239,59 @@ class _DesktopLayoutState extends State<DesktopLayout> {
     }
   }
 
+  Future<void> _loadLeaveRequests() async {
+    setState(() => _loadingLeave = true);
+    try {
+      final builder = supabase.from('leave_requests').select();
+      final response = await _runQuery(builder);
+      List data = [];
+      if (response != null && (response.error == null)) {
+        final d = response.data ?? response;
+        if (d is List) data = d;
+        else if (d != null) data = [d];
+      } else {
+        data = [];
+      }
+
+      if (data.isNotEmpty) {
+        _leaveRequests = data.map<Map<String, dynamic>>((e) {
+          final map = Map<String, dynamic>.from(e as Map);
+          map['start_date'] = map['start_date']?.toString() ?? '';
+          map['end_date'] = map['end_date']?.toString() ?? '';
+          map['status'] = map['status'] ?? 'pending';
+          map['applicant'] = map['applicant'] ?? supabase.auth.currentUser?.userMetadata?['display_name'] ?? 'You';
+          return map;
+        }).toList();
+      } else {
+        final me = supabase.auth.currentUser?.userMetadata?['display_name'] ?? 'You';
+        _leaveRequests = [
+          {
+            'id': 1,
+            'applicant': me,
+            'start_date': DateTime.now().add(const Duration(days: 7)).toIso8601String(),
+            'end_date': DateTime.now().add(const Duration(days: 10)).toIso8601String(),
+            'days': 4,
+            'status': 'approved'
+          },
+          {
+            'id': 2,
+            'applicant': 'Thomas',
+            'start_date': DateTime.now().subtract(const Duration(days: 2)).toIso8601String(),
+            'end_date': DateTime.now().add(const Duration(days: 1)).toIso8601String(),
+            'days': 4,
+            'status': 'pending'
+          },
+        ];
+      }
+    } catch (e, st) {
+      debugPrint('Load leave requests failed: $e\n$st');
+      _leaveRequests = [];
+    } finally {
+      setState(() => _loadingLeave = false);
+    }
+  }
+
+  // 在右侧 content 中加入 leave 显示
   Widget _buildRightContent() {
     if (_selectedSection == _Section.work) {
       if (_loadingTasks) {
@@ -327,6 +389,98 @@ class _DesktopLayoutState extends State<DesktopLayout> {
         ),
       );
     }
+
+    if (_selectedSection == _Section.leave) {
+      if (_loadingLeave) return const Center(child: CircularProgressIndicator());
+      if (_leaveRequests.isEmpty) {
+        return Center(
+          child: Padding(
+            padding: const EdgeInsets.all(24.0),
+            child: Text('No leave requests found.', style: TextStyle(color: Colors.black54)),
+          ),
+        );
+      }
+
+      return Padding(
+        padding: const EdgeInsets.all(12.0),
+        child: SingleChildScrollView(
+          child: Column(
+            children: _leaveRequests.map((r) {
+              final start = DateTime.tryParse(r['start_date'] ?? '') ;
+              final end = DateTime.tryParse(r['end_date'] ?? '');
+              final days = r['days'] ?? (start != null && end != null ? end.difference(start).inDays + 1 : null);
+              final status = (r['status'] ?? 'pending').toString();
+              Color statusColor = Colors.orange;
+              if (status == 'approved') statusColor = Colors.green;
+              if (status == 'rejected') statusColor = Colors.red;
+
+              return Card(
+                margin: const EdgeInsets.symmetric(vertical: 8),
+                child: Padding(
+                  padding: const EdgeInsets.all(12.0),
+                  child: Column(
+                    crossAxisAlignment: CrossAxisAlignment.start,
+                    children: [
+                      Row(
+                        children: [
+                          Expanded(child: Text('Leave request by ${r['applicant']}', style: const TextStyle(fontWeight: FontWeight.bold))),
+                          Container(
+                            padding: const EdgeInsets.symmetric(horizontal: 8, vertical: 4),
+                            decoration: BoxDecoration(color: statusColor.withOpacity(0.15), borderRadius: BorderRadius.circular(8)),
+                            child: Text(status.toUpperCase(), style: TextStyle(color: statusColor)),
+                          ),
+                        ],
+                      ),
+                      const SizedBox(height: 8),
+                      Text('From: ${start != null ? start.toLocal().toString().split(' ')[0] : r['start_date']}'),
+                      Text('To:   ${end != null ? end.toLocal().toString().split(' ')[0] : r['end_date']}'),
+                      if (days != null) Text('Days: $days'),
+                      const SizedBox(height: 8),
+                      Row(
+                        mainAxisAlignment: MainAxisAlignment.end,
+                        children: [
+                          // 如果是申请人本人，允许撤回（示例，本地撤回或调用 API）
+                          if ((r['applicant'] ?? '') == (supabase.auth.currentUser?.userMetadata?['display_name'] ?? ''))
+                            TextButton(
+                              onPressed: () async {
+                                // 本地更新并尝试从 DB 删除/更新状态
+                                setState(() {
+                                  _leaveRequests.removeWhere((x) => x['id'] == r['id']);
+                                });
+                                try {
+                                  await _runQuery(supabase.from('leave_requests').delete().eq('id', r['id']));
+                                } catch (e) {
+                                  debugPrint('Failed to delete leave request: $e');
+                                }
+                              },
+                              child: const Text('Withdraw'),
+                            ),
+                          TextButton(
+                            onPressed: () {
+                              // 仅作为查看确认示例
+                              showDialog(
+                                context: context,
+                                builder: (_) => AlertDialog(
+                                  title: const Text('Leave details'),
+                                  content: Text('Applicant: ${r['applicant']}\nFrom: ${r['start_date']}\nTo: ${r['end_date']}\nStatus: $status'),
+                                  actions: [TextButton(onPressed: () => Navigator.pop(context), child: const Text('Close'))],
+                                ),
+                              );
+                            },
+                            child: const Text('Details'),
+                          ),
+                        ],
+                      ),
+                    ],
+                  ),
+                ),
+              );
+            }).toList(),
+          ),
+        ),
+      );
+    }
+
     return const Center(child: Text('Profile Page Content Area', style: TextStyle(fontSize: 24)));
   }
 
@@ -343,6 +497,11 @@ class _DesktopLayoutState extends State<DesktopLayout> {
       setState(() {
         _selectedSection = _Section.messages;
       });
+    } else if (label == 'Leave') {
+      setState(() {
+        _selectedSection = _Section.leave;
+      });
+      _loadLeaveRequests(); // 切换时刷新
     }
   }
 
@@ -523,6 +682,7 @@ class _DesktopLayoutState extends State<DesktopLayout> {
                               _SidebarItem(icon: Icons.home, label: 'Home', onTap: () => _onSidebarTap('Home')),
                               _SidebarItem(icon: Icons.folder, label: 'Work', onTap: () => _onSidebarTap('Work')),
                               _SidebarItem(icon: Icons.message, label: 'Messages', onTap: () => _onSidebarTap('Messages')),
+                              _SidebarItem(icon: Icons.beach_access, label: 'Leave', onTap: () => _onSidebarTap('Leave')),
                             ],
                           ),
                         ),
