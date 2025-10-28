@@ -8,6 +8,7 @@ import 'package:geoprof/components/header_bar.dart';
 
 class Dashboard extends StatefulWidget {
   const Dashboard({super.key});
+
   @override
   State<Dashboard> createState() => _DashboardState();
 }
@@ -19,18 +20,14 @@ class _DashboardState extends State<Dashboard> {
   bool _isSubmitting = false;
   String? _error;
   int _remainingLeaveDays = 28;
-
   final _startDateController = TextEditingController();
   final _endDateController = TextEditingController();
   final _reasonController = TextEditingController();
-
   CalendarFormat _calendarFormat = CalendarFormat.month;
   DateTime _focusedDay = DateTime.now();
   DateTime? _selectedDay;
   Map<DateTime, List<Map<String, dynamic>>> _events = {};
-
   bool _showWorkWeek = false;
-
   DateTime? _lastSubmitTime;
   DateTime? _lastDeleteTime;
   static const _rateLimitDuration = Duration(seconds: 5);
@@ -234,6 +231,7 @@ class _DashboardState extends State<Dashboard> {
     }
   }
 
+  // FIXED: Convert ID to int if needed
   Future<void> _deleteRequest(dynamic requestId) async {
     if (_lastDeleteTime != null &&
         DateTime.now().difference(_lastDeleteTime!) < _rateLimitDuration) {
@@ -258,7 +256,13 @@ class _DashboardState extends State<Dashboard> {
     );
     if (confirm != true) return;
     try {
-      await supabase.from('verlof').delete().eq('id', requestId);
+      // FIX: Handle int or string ID
+      final id = requestId is int
+          ? requestId
+          : (requestId is String ? int.tryParse(requestId) : null);
+      if (id == null) throw 'Invalid ID';
+
+      await supabase.from('verlof').delete().eq('id', id);
       _showSnackBar('Request deleted successfully.');
       _fetchRequests();
       _fetchLeaveBalance();
@@ -701,7 +705,8 @@ class _DashboardState extends State<Dashboard> {
                                               : req['approved'] == false
                                                   ? 'Pending'
                                                   : 'Denied';
-                                          final days = req['days_count'] as int? ?? 0;
+                                          final days =
+                                              req['days_count'] as int? ?? 0;
                                           return Card(
                                             margin: const EdgeInsets.symmetric(
                                                 vertical: 6),
