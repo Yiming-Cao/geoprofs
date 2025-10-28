@@ -217,17 +217,17 @@ class _DesktopLayoutState extends State<DesktopLayout> {
                           const SizedBox(height: 32),
                         ],
                         const SizedBox(height: 16),
-                        Center(
-                          child: TextButton(
-                            onPressed: () {
-                              Navigator.pushNamed(context, '/register');
-                            },
-                            child: const Text(
-                              "Don't have an account yet? Sign up here",
-                              style: TextStyle(color: Colors.redAccent),
-                            ),
-                          ),
-                        ),
+                        // Center(
+                        //   child: TextButton(
+                        //     onPressed: () {
+                        //       Navigator.pushNamed(context, '/register');
+                        //     },
+                        //     child: const Text(
+                        //       "Don't have an account yet? Sign up here",
+                        //       style: TextStyle(color: Colors.redAccent),
+                        //     ),
+                        //   ),
+                        // ),
                       ],
                     ),
                   ),

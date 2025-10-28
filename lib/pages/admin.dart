@@ -29,10 +29,10 @@ class AuditTrailPage extends StatelessWidget {
     final supabase = Supabase.instance.client;
     final response = await supabase
       .from('logs')
-      .select('id, action, change, was, user_id, created_at')
+      .select('id, action, change, was, user_uuid, created_at')
       .order('created_at', ascending: false);
 
-      print("Supabase response: $response");
+      // print("Supabase response: $response");
     return response;
   }
 
@@ -47,7 +47,7 @@ Widget build(BuildContext context) {
           return const Center(child: CircularProgressIndicator());
         }
         if (snapshot.hasError) {
-          return const Center(child: Text('Fout bij laden van logs'));
+          return Center(child: Text('Fout bij laden van logs.'));
         }
         final logs = snapshot.data ?? [];
         if (logs.isEmpty) {
