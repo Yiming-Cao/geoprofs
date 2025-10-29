@@ -1,4 +1,3 @@
-// dashboard.dart
 import 'package:flutter/material.dart';
 import 'package:supabase_flutter/supabase_flutter.dart';
 import 'package:intl/intl.dart';
@@ -47,38 +46,27 @@ class _DashboardState extends State<Dashboard> {
       setState(() => _error = 'Not logged in.');
       return;
     }
-
     try {
       final jwt = session.accessToken;
       final payload = Jwt.parseJwt(jwt);
-
-      // Try JWT first
       final roleFromJwt = payload['app_metadata']?['user_role'] as String? ??
           payload['user_role'] as String?;
-
       if (roleFromJwt != null) {
         final isManager = roleFromJwt == 'manager';
-        print('JWT Role: $roleFromJwt → isManager: $isManager');
         setState(() => _isManager = isManager);
         await _fetchRequests();
         return;
       }
-
-      // Fallback to permissions table
       print('JWT has no user_role. Falling back to permissions table...');
       final userId = supabase.auth.currentUser?.id;
       if (userId == null) throw 'No user ID';
-
       final response = await supabase
           .from('permissions')
           .select('role')
           .eq('user_uuid', userId)
           .maybeSingle();
-
       final roleFromDb = response?['role'] as String?;
       final isManager = roleFromDb == 'manager';
-      print('DB Role: $roleFromDb → isManager: $isManager');
-
       setState(() => _isManager = isManager);
       await _fetchRequests();
     } catch (e, st) {
@@ -280,7 +268,7 @@ class _DashboardState extends State<Dashboard> {
       }).select();
       _showSnackBar('Request submitted successfully!');
       _clearForm();
-      _fetchRequests();
+      await _fetchRequests();
       _fetchLeaveBalance();
     } catch (e) {
       _showSnackBar('Failed to submit request: $e', isError: true);
@@ -290,58 +278,84 @@ class _DashboardState extends State<Dashboard> {
   }
 
   Future<void> _deleteRequest(dynamic requestId) async {
-    if (_lastDeleteTime != null &&
-        DateTime.now().difference(_lastDeleteTime!) < _rateLimitDuration) {
-      _showSnackBar('Please wait before deleting again.', isError: true);
-      return;
+  if (_lastDeleteTime != null &&
+      DateTime.now().difference(_lastDeleteTime!) < _rateLimitDuration) {
+    _showSnackBar('Please wait before deleting again.', isError: true);
+    return;
+  }
+  _lastDeleteTime = DateTime.now();
+
+  final confirm = await showDialog<bool>(
+    context: context,
+    builder: (_) => AlertDialog(
+      title: const Text('Delete Request'),
+      content: const Text('This cannot be undone. Proceed?'),
+      actions: [
+        TextButton(onPressed: () => Navigator.pop(context, false), child: const Text('Cancel')),
+        TextButton(onPressed: () => Navigator.pop(context, true), child: const Text('Delete', style: TextStyle(color: Colors.red))),
+      ],
+    ),
+  );
+  if (confirm != true) return;
+
+  try {
+    final id = requestId is int ? requestId : (requestId is String ? int.tryParse(requestId) : null);
+    if (id == null) throw 'Invalid ID';
+
+    // Get request BEFORE deleting
+    final req = _requests.firstWhere((r) => r['id'] == id);
+    final wasApproved = req['approved'] == true;
+    final days = req['days_count'] as int;
+    final userId = req['user_id'];
+
+    // Delete from DB
+    await supabase.from('verlof').delete().eq('id', id);
+
+    // REFUND if it was approved
+    if (wasApproved) {
+      await supabase.rpc('decrement_leave_used', params: {
+        'p_user_id': userId,
+        'p_days': days,
+      });
     }
-    _lastDeleteTime = DateTime.now();
-    final confirm = await showDialog<bool>(
-      context: context,
-      builder: (_) => AlertDialog(
-        title: const Text('Delete Request'),
-        content: const Text('This cannot be undone. Proceed?'),
-        actions: [
-          TextButton(
-              onPressed: () => Navigator.pop(context, false),
-              child: const Text('Cancel')),
-          TextButton(
-              onPressed: () => Navigator.pop(context, true),
-              child: const Text('Delete', style: TextStyle(color: Colors.red))),
-        ],
-      ),
-    );
-    if (confirm != true) return;
-    try {
-      final id = requestId is int
-          ? requestId
-          : (requestId is String ? int.tryParse(requestId) : null);
-      if (id == null) throw 'Invalid ID';
-      await supabase.from('verlof').delete().eq('id', id);
-      _showSnackBar('Request deleted successfully.');
-      _fetchRequests();
-      _fetchLeaveBalance();
+
+    _showSnackBar('Request deleted successfully.');
+    await _fetchRequests();
+    if (userId == supabase.auth.currentUser?.id) {
+      await _fetchLeaveBalance();
+    }
     } catch (e) {
       _showSnackBar('Failed to delete request: $e', isError: true);
     }
   }
 
   Future<void> _updateRequestStatus(int id, bool? approved) async {
-    try {
-      final req = _requests.firstWhere((r) => r['id'] == id);
-      final userId = req['user_id'];
-      final days = req['days_count'] as int;
-      await supabase.from('verlof').update({'approved': approved}).eq('id', id);
-      if (approved == true) {
-        await supabase.rpc('increment_leave_used', params: {
-          'p_user_id': userId,
-          'p_days': days,
-        });
-      }
-      final status = approved == true ? 'approved' : approved == false ? 'pending' : 'denied';
-      _showSnackBar('Request $status.');
-      _fetchRequests();
-      if (userId == supabase.auth.currentUser?.id) _fetchLeaveBalance();
+  try {
+    // Find request locally
+    final req = _requests.firstWhere((r) => r['id'] == id);
+    final userId = req['user_id'];
+    final days = req['days_count'] as int;
+
+    // UPDATE DB
+    await supabase.from('verlof').update({'approved': approved}).eq('id', id);
+
+    // ONLY increment if APPROVING (true)
+    if (approved == true) {
+      await supabase.rpc('increment_leave_used', params: {
+        'p_user_id': userId,
+        'p_days': days,
+      });
+    }
+
+    // SUCCESS
+    final status = approved == true ? 'approved' : approved == false ? 'set to pending' : 'denied';
+    _showSnackBar('Request $status.');
+
+    // REFRESH DATA
+    await _fetchRequests();
+    if (userId == supabase.auth.currentUser?.id) {
+      await _fetchLeaveBalance();
+    }
     } catch (e) {
       _showSnackBar('Failed to update: $e', isError: true);
     }
@@ -692,7 +706,9 @@ class _DashboardState extends State<Dashboard> {
                                 ),
                                 const SizedBox(height: 32),
                                 Text(
-                                  _isManager ? 'All Team Requests' : 'New Leave Request',
+                                  _isManager
+                                      ? 'All Team Requests'
+                                      : 'New Leave Request',
                                   style: const TextStyle(
                                       fontSize: 18,
                                       fontWeight: FontWeight.bold),
@@ -733,8 +749,9 @@ class _DashboardState extends State<Dashboard> {
                                   SizedBox(
                                     width: double.infinity,
                                     child: ElevatedButton(
-                                      onPressed:
-                                          _isSubmitting ? null : _submitRequest,
+                                      onPressed: _isSubmitting
+                                          ? null
+                                          : _submitRequest,
                                       style: ElevatedButton.styleFrom(
                                         backgroundColor: Colors.red,
                                         padding: const EdgeInsets.symmetric(
