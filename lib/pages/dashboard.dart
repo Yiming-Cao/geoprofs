@@ -1,3 +1,4 @@
+// dashboard.dart
 import 'package:flutter/material.dart';
 import 'package:supabase_flutter/supabase_flutter.dart';
 import 'package:intl/intl.dart';
@@ -5,10 +6,10 @@ import 'package:table_calendar/table_calendar.dart';
 import 'package:geoprof/components/navbar.dart';
 import 'package:geoprof/components/background_container.dart';
 import 'package:geoprof/components/header_bar.dart';
+import 'package:jwt_decode/jwt_decode.dart';
 
 class Dashboard extends StatefulWidget {
   const Dashboard({super.key});
-
   @override
   State<Dashboard> createState() => _DashboardState();
 }
@@ -31,12 +32,60 @@ class _DashboardState extends State<Dashboard> {
   DateTime? _lastSubmitTime;
   DateTime? _lastDeleteTime;
   static const _rateLimitDuration = Duration(seconds: 5);
+  bool _isManager = false;
 
   @override
   void initState() {
     super.initState();
-    _fetchRequests();
+    _checkManagerAndFetch();
     _fetchLeaveBalance();
+  }
+
+  Future<void> _checkManagerAndFetch() async {
+    final session = supabase.auth.currentSession;
+    if (session == null) {
+      setState(() => _error = 'Not logged in.');
+      return;
+    }
+
+    try {
+      final jwt = session.accessToken;
+      final payload = Jwt.parseJwt(jwt);
+
+      // Try JWT first
+      final roleFromJwt = payload['app_metadata']?['user_role'] as String? ??
+          payload['user_role'] as String?;
+
+      if (roleFromJwt != null) {
+        final isManager = roleFromJwt == 'manager';
+        print('JWT Role: $roleFromJwt → isManager: $isManager');
+        setState(() => _isManager = isManager);
+        await _fetchRequests();
+        return;
+      }
+
+      // Fallback to permissions table
+      print('JWT has no user_role. Falling back to permissions table...');
+      final userId = supabase.auth.currentUser?.id;
+      if (userId == null) throw 'No user ID';
+
+      final response = await supabase
+          .from('permissions')
+          .select('role')
+          .eq('user_uuid', userId)
+          .maybeSingle();
+
+      final roleFromDb = response?['role'] as String?;
+      final isManager = roleFromDb == 'manager';
+      print('DB Role: $roleFromDb → isManager: $isManager');
+
+      setState(() => _isManager = isManager);
+      await _fetchRequests();
+    } catch (e, st) {
+      print('ERROR in _checkManagerAndFetch: $e');
+      print(st);
+      setState(() => _error = 'Failed to check permissions: $e');
+    }
   }
 
   Future<bool> _validateSession() async {
@@ -108,23 +157,34 @@ class _DashboardState extends State<Dashboard> {
       return;
     }
     try {
-      final response = await supabase
-          .from('verlof')
-          .select('*')
-          .eq('user_id', userId)
-          .order('created_at', ascending: false);
-      final List<Map<String, dynamic>> requests =
-          List<Map<String, dynamic>>.from(response);
+      print('Fetching requests for user: $userId | isManager: $_isManager');
+      late final PostgrestList response;
+      if (_isManager) {
+        response = await supabase
+            .from('verlof')
+            .select('*')
+            .order('created_at', ascending: false);
+      } else {
+        response = await supabase
+            .from('verlof')
+            .select('*')
+            .eq('user_id', userId)
+            .order('created_at', ascending: false);
+      }
+      print('Fetched ${response.length} requests');
+      final List<Map<String, dynamic>> requests = List.from(response);
       setState(() {
         _requests = requests;
         _events = _buildEventsMap(requests);
         _isLoadingRequests = false;
         _error = null;
       });
-    } catch (e) {
+    } catch (e, st) {
+      print('ERROR in _fetchRequests: $e');
+      print(st);
       setState(() {
         _isLoadingRequests = false;
-        _error = 'Unable to load requests.';
+        _error = 'Failed to load requests: $e';
       });
     }
   }
@@ -139,10 +199,8 @@ class _DashboardState extends State<Dashboard> {
       final startUtc = DateTime.tryParse(startStr);
       final endUtc = DateTime.tryParse(endStr);
       if (startUtc == null || endUtc == null) continue;
-      var current = DateTime(startUtc.year, startUtc.month, startUtc.day)
-          .add(const Duration(days: 1));
-      final end = DateTime(endUtc.year, endUtc.month, endUtc.day)
-          .add(const Duration(days: 1));
+      var current = DateTime.utc(startUtc.year, startUtc.month, startUtc.day);
+      final end = DateTime.utc(endUtc.year, endUtc.month, endUtc.day);
       while (!current.isAfter(end)) {
         final key = DateTime(current.year, current.month, current.day);
         events.putIfAbsent(key, () => []).add(req);
@@ -231,7 +289,6 @@ class _DashboardState extends State<Dashboard> {
     }
   }
 
-  // FIXED: Convert ID to int if needed
   Future<void> _deleteRequest(dynamic requestId) async {
     if (_lastDeleteTime != null &&
         DateTime.now().difference(_lastDeleteTime!) < _rateLimitDuration) {
@@ -256,18 +313,37 @@ class _DashboardState extends State<Dashboard> {
     );
     if (confirm != true) return;
     try {
-      // FIX: Handle int or string ID
       final id = requestId is int
           ? requestId
           : (requestId is String ? int.tryParse(requestId) : null);
       if (id == null) throw 'Invalid ID';
-
       await supabase.from('verlof').delete().eq('id', id);
       _showSnackBar('Request deleted successfully.');
       _fetchRequests();
       _fetchLeaveBalance();
     } catch (e) {
       _showSnackBar('Failed to delete request: $e', isError: true);
+    }
+  }
+
+  Future<void> _updateRequestStatus(int id, bool? approved) async {
+    try {
+      final req = _requests.firstWhere((r) => r['id'] == id);
+      final userId = req['user_id'];
+      final days = req['days_count'] as int;
+      await supabase.from('verlof').update({'approved': approved}).eq('id', id);
+      if (approved == true) {
+        await supabase.rpc('increment_leave_used', params: {
+          'p_user_id': userId,
+          'p_days': days,
+        });
+      }
+      final status = approved == true ? 'approved' : approved == false ? 'pending' : 'denied';
+      _showSnackBar('Request $status.');
+      _fetchRequests();
+      if (userId == supabase.auth.currentUser?.id) _fetchLeaveBalance();
+    } catch (e) {
+      _showSnackBar('Failed to update: $e', isError: true);
     }
   }
 
@@ -415,12 +491,10 @@ class _DashboardState extends State<Dashboard> {
                                             .map((e) {
                                               final start = DateTime.tryParse(
                                                       e['start'] ?? '')
-                                                  ?.toLocal()
-                                                  .add(const Duration(days: 1));
+                                                  ?.toLocal();
                                               final end = DateTime.tryParse(
                                                       e['end_time'] ?? '')
-                                                  ?.toLocal()
-                                                  .add(const Duration(days: 1));
+                                                  ?.toLocal();
                                               final status =
                                                   e['approved'] == true
                                                       ? 'Approved'
@@ -571,8 +645,7 @@ class _DashboardState extends State<Dashboard> {
                                       setState(() => _focusedDay = f),
                                   eventLoader: _getEventsForDay,
                                   enabledDayPredicate: _showWorkWeek
-                                      ? (d) =>
-                                          d.weekday != DateTime.saturday &&
+                                      ? (d) => d.weekday != DateTime.saturday &&
                                           d.weekday != DateTime.sunday
                                       : null,
                                   calendarStyle: CalendarStyle(
@@ -618,70 +691,76 @@ class _DashboardState extends State<Dashboard> {
                                   ),
                                 ),
                                 const SizedBox(height: 32),
-                                const Text('New Leave Request',
-                                    style: TextStyle(
-                                        fontSize: 18,
-                                        fontWeight: FontWeight.bold)),
-                                const SizedBox(height: 16),
-                                TextField(
-                                  controller: _startDateController,
-                                  decoration: const InputDecoration(
-                                    labelText: 'Start Date',
-                                    border: OutlineInputBorder(),
-                                    suffixIcon: Icon(Icons.calendar_today),
-                                  ),
-                                  readOnly: true,
-                                  onTap: () => _pickDate(_startDateController),
-                                ),
-                                const SizedBox(height: 12),
-                                TextField(
-                                  controller: _endDateController,
-                                  decoration: const InputDecoration(
-                                    labelText: 'End Date',
-                                    border: OutlineInputBorder(),
-                                    suffixIcon: Icon(Icons.calendar_today),
-                                  ),
-                                  readOnly: true,
-                                  onTap: () => _pickDate(_endDateController),
-                                ),
-                                const SizedBox(height: 12),
-                                TextField(
-                                  controller: _reasonController,
-                                  decoration: const InputDecoration(
-                                    labelText: 'Reason',
-                                    border: OutlineInputBorder(),
-                                  ),
-                                  maxLines: 3,
+                                Text(
+                                  _isManager ? 'All Team Requests' : 'New Leave Request',
+                                  style: const TextStyle(
+                                      fontSize: 18,
+                                      fontWeight: FontWeight.bold),
                                 ),
                                 const SizedBox(height: 16),
-                                SizedBox(
-                                  width: double.infinity,
-                                  child: ElevatedButton(
-                                    onPressed:
-                                        _isSubmitting ? null : _submitRequest,
-                                    style: ElevatedButton.styleFrom(
-                                      backgroundColor: Colors.red,
-                                      padding: const EdgeInsets.symmetric(
-                                          vertical: 16),
-                                      shape: RoundedRectangleBorder(
-                                          borderRadius:
-                                              BorderRadius.circular(12)),
+                                if (!_isManager) ...[
+                                  TextField(
+                                    controller: _startDateController,
+                                    decoration: const InputDecoration(
+                                      labelText: 'Start Date',
+                                      border: OutlineInputBorder(),
+                                      suffixIcon: Icon(Icons.calendar_today),
                                     ),
-                                    child: _isSubmitting
-                                        ? const CircularProgressIndicator(
-                                            color: Colors.white)
-                                        : const Text('Submit',
-                                            style: TextStyle(
-                                                fontSize: 16,
-                                                color: Colors.white)),
+                                    readOnly: true,
+                                    onTap: () => _pickDate(_startDateController),
                                   ),
+                                  const SizedBox(height: 12),
+                                  TextField(
+                                    controller: _endDateController,
+                                    decoration: const InputDecoration(
+                                      labelText: 'End Date',
+                                      border: OutlineInputBorder(),
+                                      suffixIcon: Icon(Icons.calendar_today),
+                                    ),
+                                    readOnly: true,
+                                    onTap: () => _pickDate(_endDateController),
+                                  ),
+                                  const SizedBox(height: 12),
+                                  TextField(
+                                    controller: _reasonController,
+                                    decoration: const InputDecoration(
+                                      labelText: 'Reason',
+                                      border: OutlineInputBorder(),
+                                    ),
+                                    maxLines: 3,
+                                  ),
+                                  const SizedBox(height: 16),
+                                  SizedBox(
+                                    width: double.infinity,
+                                    child: ElevatedButton(
+                                      onPressed:
+                                          _isSubmitting ? null : _submitRequest,
+                                      style: ElevatedButton.styleFrom(
+                                        backgroundColor: Colors.red,
+                                        padding: const EdgeInsets.symmetric(
+                                            vertical: 16),
+                                        shape: RoundedRectangleBorder(
+                                            borderRadius:
+                                                BorderRadius.circular(12)),
+                                      ),
+                                      child: _isSubmitting
+                                          ? const CircularProgressIndicator(
+                                              color: Colors.white)
+                                          : const Text('Submit',
+                                              style: TextStyle(
+                                                  fontSize: 16,
+                                                  color: Colors.white)),
+                                    ),
+                                  ),
+                                  const SizedBox(height: 32),
+                                ],
+                                Text(
+                                  _isManager ? 'Team Requests' : 'My Requests',
+                                  style: Theme.of(context)
+                                      .textTheme
+                                      .titleLarge
+                                      ?.copyWith(fontWeight: FontWeight.bold),
                                 ),
-                                const SizedBox(height: 32),
-                                Text('All Requests',
-                                    style: Theme.of(context)
-                                        .textTheme
-                                        .titleLarge
-                                        ?.copyWith(fontWeight: FontWeight.bold)),
                                 const SizedBox(height: 12),
                                 _requests.isEmpty
                                     ? const Text('No requests yet.')
@@ -694,12 +773,10 @@ class _DashboardState extends State<Dashboard> {
                                           final req = _requests[i];
                                           final start = DateTime.tryParse(
                                                   req['start'] ?? '')
-                                              ?.toLocal()
-                                              .add(const Duration(days: 1));
+                                              ?.toLocal();
                                           final end = DateTime.tryParse(
                                                   req['end_time'] ?? '')
-                                              ?.toLocal()
-                                              .add(const Duration(days: 1));
+                                              ?.toLocal();
                                           final status = req['approved'] == true
                                               ? 'Approved'
                                               : req['approved'] == false
@@ -707,6 +784,8 @@ class _DashboardState extends State<Dashboard> {
                                                   : 'Denied';
                                           final days =
                                               req['days_count'] as int? ?? 0;
+                                          final isOwn = req['user_id'] ==
+                                              supabase.auth.currentUser?.id;
                                           return Card(
                                             margin: const EdgeInsets.symmetric(
                                                 vertical: 6),
@@ -725,13 +804,52 @@ class _DashboardState extends State<Dashboard> {
                                                         'End: ${DateFormat('yyyy-MM-dd').format(end)}'),
                                                   Text('Status: $status'),
                                                   Text('Days: $days'),
+                                                  if (_isManager)
+                                                    Text('User: ${req['user_id']}'),
                                                 ],
                                               ),
-                                              trailing: IconButton(
-                                                icon: const Icon(Icons.delete,
-                                                    color: Colors.red),
-                                                onPressed: () =>
-                                                    _deleteRequest(req['id']),
+                                              trailing: Row(
+                                                mainAxisSize: MainAxisSize.min,
+                                                children: [
+                                                  if (_isManager) ...[
+                                                    if (req['approved'] != true)
+                                                      IconButton(
+                                                        icon: const Icon(Icons.check,
+                                                            color: Colors.green),
+                                                        onPressed: () =>
+                                                            _updateRequestStatus(
+                                                                req['id'], true),
+                                                        tooltip: 'Approve',
+                                                      ),
+                                                    if (req['approved'] != false)
+                                                      IconButton(
+                                                        icon: const Icon(Icons.hourglass_empty,
+                                                            color: Colors.orange),
+                                                        onPressed: () =>
+                                                            _updateRequestStatus(
+                                                                req['id'], false),
+                                                        tooltip: 'Pending',
+                                                      ),
+                                                    if (req['approved'] != null)
+                                                      IconButton(
+                                                        icon: const Icon(Icons.close,
+                                                            color: Colors.red),
+                                                        onPressed: () =>
+                                                            _updateRequestStatus(
+                                                                req['id'], null),
+                                                        tooltip: 'Deny',
+                                                      ),
+                                                  ],
+                                                  if (isOwn || _isManager)
+                                                    IconButton(
+                                                      icon: const Icon(
+                                                          Icons.delete,
+                                                          color: Colors.red),
+                                                      onPressed: () =>
+                                                          _deleteRequest(
+                                                              req['id']),
+                                                    ),
+                                                ],
                                               ),
                                             ),
                                           );
