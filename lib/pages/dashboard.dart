@@ -541,7 +541,7 @@ class _DashboardState extends State<Dashboard> {
                                       value: _showWorkWeek,
                                       onChanged: (v) =>
                                           setState(() => _showWorkWeek = v),
-                                      activeColor: Colors.red,
+                                      activeThumbColor: Colors.red,
                                     ),
                                   ],
                                 ),

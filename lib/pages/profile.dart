@@ -140,7 +140,7 @@ class _DesktopLayoutState extends State<DesktopLayout> {
             }
           } else if (rawMembers is List) {
             members = rawMembers.map<Map<String, dynamic>>((m) {
-              if (m is Map) return Map<String, dynamic>.from(m as Map);
+              if (m is Map) return Map<String, dynamic>.from(m);
               return {'display_name': m.toString()};
             }).toList();
           }
@@ -242,27 +242,52 @@ class _DesktopLayoutState extends State<DesktopLayout> {
   Future<void> _loadLeaveRequests() async {
     setState(() => _loadingLeave = true);
     try {
-      final builder = supabase.from('leave_requests').select();
-      final response = await _runQuery(builder);
+      // 尝试兼容两种表名：优先读取 verLof（dashboard 使用），再回退到 leave_requests（兼容旧数据）
+      final userId = supabase.auth.currentUser?.id;
+      dynamic builder = supabase.from('verlof').select();
+      if (userId != null) builder = (builder as dynamic).eq('user_id', userId).order('created_at', ascending: false);
+
+      // 如果 verLof 返回空/出错，再尝试 legacy 表
+      var response = await _runQuery(builder);
       List data = [];
+      if (response == null || (response is Map && response.containsKey('error'))) {
+        // fallback
+        response = await _runQuery(supabase.from('leave_requests').select());
+      }
+
       if (response != null && (response.error == null)) {
         final d = response.data ?? response;
-        if (d is List) data = d;
-        else if (d != null) data = [d];
-      } else {
-        data = [];
+        if (d is List) {
+          data = d;
+        } else if (d != null) {
+          data = [d];
+        }
       }
 
       if (data.isNotEmpty) {
         _leaveRequests = data.map<Map<String, dynamic>>((e) {
           final map = Map<String, dynamic>.from(e as Map);
-          map['start_date'] = map['start_date']?.toString() ?? '';
-          map['end_date'] = map['end_date']?.toString() ?? '';
-          map['status'] = map['status'] ?? 'pending';
-          map['applicant'] = map['applicant'] ?? supabase.auth.currentUser?.userMetadata?['display_name'] ?? 'You';
+
+          // 支持 dashboard 的字段命名：start / end_time / approved / days_count
+          map['start_date'] = map['start']?.toString() ?? map['start_date']?.toString() ?? '';
+          map['end_date'] = map['end_time']?.toString() ?? map['end_date']?.toString() ?? '';
+          map['days'] = map['days_count'] ?? map['days'] ?? map['days']?.toInt();
+          // 将 boolean approved 映射为字符串 status，兼容旧格式
+          if (map.containsKey('approved')) {
+            final approved = map['approved'];
+            map['status'] = approved == true ? 'approved' : (approved == false ? 'pending' : (map['status'] ?? 'pending'));
+          } else {
+            map['status'] = map['status'] ?? 'pending';
+          }
+          // applicant 字段回退：优先已有 applicant，否则尝试 user metadata display name 或 user_id
+          map['applicant'] = map['applicant'] ??
+              supabase.auth.currentUser?.userMetadata?['display_name'] ??
+              map['user_id'] ??
+              'You';
           return map;
         }).toList();
       } else {
+        // 保持原有的示例/占位数据（不改动）
         final me = supabase.auth.currentUser?.userMetadata?['display_name'] ?? 'You';
         _leaveRequests = [
           {
