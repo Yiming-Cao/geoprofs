@@ -242,77 +242,115 @@ class _DesktopLayoutState extends State<DesktopLayout> {
   Future<void> _loadLeaveRequests() async {
     setState(() => _loadingLeave = true);
     try {
-      // 尝试兼容两种表名：优先读取 verLof（dashboard 使用），再回退到 leave_requests（兼容旧数据）
-      final userId = supabase.auth.currentUser?.id;
-      dynamic builder = supabase.from('verlof').select();
-      if (userId != null) builder = (builder as dynamic).eq('user_id', userId).order('created_at', ascending: false);
+      final currentUser = supabase.auth.currentUser;
+      final userId = currentUser?.id;
 
-      // 如果 verLof 返回空/出错，再尝试 legacy 表
-      var response = await _runQuery(builder);
-      List data = [];
-      if (response == null || (response is Map && response.containsKey('error'))) {
-        // fallback
-        response = await _runQuery(supabase.from('leave_requests').select());
+      // Build query for 'verlof' (dashboard writes to this table)
+      dynamic builder = supabase.from('verlof').select();
+
+      // If you only want the current user's requests, uncomment the next line.
+      if (userId != null) builder = (builder as dynamic).eq('user_id', userId);
+
+      final response = await _runQuery(builder);
+
+      // Robustly extract list of rows from different response shapes
+      List rows = [];
+      if (response == null) {
+        rows = [];
+      } else if (response is List) {
+        rows = List.from(response);
+      } else if (response is Map && response.containsKey('data')) {
+        final d = response['data'];
+        if (d is List) rows = List.from(d);
+        else if (d != null) rows = [d];
+      } else if (response is Map && response.containsKey('error')) {
+        rows = [];
+      } else {
+        rows = [response];
       }
 
-      if (response != null && (response.error == null)) {
-        final d = response.data ?? response;
-        if (d is List) {
-          data = d;
-        } else if (d != null) {
-          data = [d];
+      // If no rows from 'verlof', fall back to legacy table 'leave_requests'
+      if (rows.isEmpty) {
+        final legacy = await _runQuery(supabase.from('leave_requests').select());
+        if (legacy is List) rows = List.from(legacy);
+        else if (legacy is Map && legacy.containsKey('data')) {
+          final d = legacy['data'];
+          if (d is List) rows = List.from(d);
+          else if (d != null) rows = [d];
+        } else if (legacy != null && legacy is! Map) {
+          rows = [legacy];
         }
       }
 
-      if (data.isNotEmpty) {
-        _leaveRequests = data.map<Map<String, dynamic>>((e) {
-          final map = Map<String, dynamic>.from(e as Map);
-
-          // 支持 dashboard 的字段命名：start / end_time / approved / days_count
-          map['start_date'] = map['start']?.toString() ?? map['start_date']?.toString() ?? '';
-          map['end_date'] = map['end_time']?.toString() ?? map['end_date']?.toString() ?? '';
-          map['days'] = map['days_count'] ?? map['days'] ?? map['days']?.toInt();
-          // 将 boolean approved 映射为字符串 status，兼容旧格式
-          if (map.containsKey('approved')) {
-            final approved = map['approved'];
-            map['status'] = approved == true ? 'approved' : (approved == false ? 'pending' : (map['status'] ?? 'pending'));
-          } else {
-            map['status'] = map['status'] ?? 'pending';
-          }
-          // applicant 字段回退：优先已有 applicant，否则尝试 user metadata display name 或 user_id
-          map['applicant'] = map['applicant'] ??
-              supabase.auth.currentUser?.userMetadata?['display_name'] ??
-              map['user_id'] ??
-              'You';
-          return map;
-        }).toList();
-      } else {
-        // 保持原有的示例/占位数据（不改动）
-        final me = supabase.auth.currentUser?.userMetadata?['display_name'] ?? 'You';
-        _leaveRequests = [
-          {
-            'id': 1,
-            'applicant': me,
-            'start_date': DateTime.now().add(const Duration(days: 7)).toIso8601String(),
-            'end_date': DateTime.now().add(const Duration(days: 10)).toIso8601String(),
-            'days': 4,
-            'status': 'approved'
-          },
-          {
-            'id': 2,
-            'applicant': 'Thomas',
-            'start_date': DateTime.now().subtract(const Duration(days: 2)).toIso8601String(),
-            'end_date': DateTime.now().add(const Duration(days: 1)).toIso8601String(),
-            'days': 4,
-            'status': 'pending'
-          },
-        ];
+      // Prepare map of user_id -> display_name by querying profiles (if exists)
+      final Set<String> otherUserIds = {};
+      for (final r in rows) {
+        try {
+          final map = r as Map;
+          final uid = map['user_id']?.toString();
+          if (uid != null && uid.isNotEmpty && uid != userId) otherUserIds.add(uid);
+        } catch (_) {}
       }
+
+      Map<String, String> nameById = {};
+      if (otherUserIds.isNotEmpty) {
+        try {
+          final idsList = otherUserIds.toList();
+          // Attempt to read from 'profiles' table (common convention). Adjust if you have another table.
+          final profilesRes = await _runQuery(supabase.from('profiles').select('id,display_name').inFilter('id', idsList));
+          List profRows = [];
+          if (profilesRes is List) profRows = profilesRes;
+          else if (profilesRes is Map && profilesRes.containsKey('data')) {
+            final d = profilesRes['data'];
+            if (d is List) profRows = d;
+          }
+          for (final p in profRows) {
+            try {
+              final pm = Map<String, dynamic>.from(p as Map);
+              nameById[pm['id'].toString()] = pm['display_name']?.toString() ?? pm['id'].toString();
+            } catch (_) {}
+          }
+        } catch (e) {
+          debugPrint('profiles lookup failed: $e');
+        }
+      }
+
+      // Map rows into _leaveRequests with normalized fields
+      _leaveRequests = rows.map<Map<String, dynamic>>((e) {
+        final map = Map<String, dynamic>.from(e as Map);
+        // normalize date fields from 'verlof' schema
+        map['start_date'] = map['start']?.toString() ?? map['start_date']?.toString() ?? '';
+        map['end_date'] = map['end_time']?.toString() ?? map['end_date']?.toString() ?? '';
+        map['days'] = map['days_count'] ?? map['days'] ?? map['days']?.toInt();
+        // map approved boolean to status
+        if (map.containsKey('approved')) {
+          final approved = map['approved'];
+          map['status'] = approved == true ? 'approved' : 'pending';
+        } else {
+          map['status'] = map['status'] ?? 'pending';
+        }
+        // applicant display name: prefer explicit applicant, then profiles lookup, then current user (You) fallback
+        final uid = map['user_id']?.toString();
+        if (map['applicant'] == null || map['applicant'].toString().isEmpty) {
+          if (uid != null) {
+            if (uid == userId) {
+              map['applicant'] = currentUser?.userMetadata?['display_name'] ?? 'You';
+            } else if (nameById.containsKey(uid)) {
+              map['applicant'] = nameById[uid];
+            } else {
+              map['applicant'] = uid; // fallback to uuid if no name found
+            }
+          } else {
+            map['applicant'] = map['applicant'] ?? (currentUser?.userMetadata?['display_name'] ?? 'You');
+          }
+        }
+        return map;
+      }).toList();
     } catch (e, st) {
       debugPrint('Load leave requests failed: $e\n$st');
       _leaveRequests = [];
     } finally {
-      setState(() => _loadingLeave = false);
+      if (mounted) setState(() => _loadingLeave = false);
     }
   }
 
@@ -741,7 +779,24 @@ class _DesktopLayoutState extends State<DesktopLayout> {
                           borderRadius: BorderRadius.circular(16.0),
                           boxShadow: [BoxShadow(color: Colors.black.withOpacity(0.05), blurRadius: 8, offset: const Offset(0, 2))],
                         ),
-                        child: _buildRightContent(),
+                        // 为右侧内容增加上下固定间距，并让中间区域可扩展/滚动
+                        child: Padding(
+                          // 这里的 vertical 值决定上下间距，按需调整（与左侧间距保持一致可设为 16/24）
+                          padding: const EdgeInsets.symmetric(vertical: 24.0, horizontal: 16.0),
+                          child: Column(
+                            children: [
+                              // 如果需要可以在顶部放置标题或控件，当前仅保留扩展区
+                              Expanded(
+                                child: ClipRRect(
+                                  borderRadius: BorderRadius.circular(8),
+                                  child: _buildRightContent(),
+                                ),
+                              ),
+                              // 底部固定间距（可删）
+                              const SizedBox(height: 0),
+                            ],
+                          ),
+                        ),
                       ),
                     ),
                   ],
