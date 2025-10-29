@@ -20,18 +20,26 @@ class _DashboardState extends State<Dashboard> {
   bool _isSubmitting = false;
   String? _error;
   int _remainingLeaveDays = 28;
+
   final _startDateController = TextEditingController();
   final _endDateController = TextEditingController();
   final _reasonController = TextEditingController();
+
   CalendarFormat _calendarFormat = CalendarFormat.month;
   DateTime _focusedDay = DateTime.now();
   DateTime? _selectedDay;
   Map<DateTime, List<Map<String, dynamic>>> _events = {};
   bool _showWorkWeek = false;
+
   DateTime? _lastSubmitTime;
   DateTime? _lastDeleteTime;
   static const _rateLimitDuration = Duration(seconds: 5);
+
   bool _isManager = false;
+
+  // === QUICK TYPE DROPDOWN ===
+  String? _selectedVerlofType;
+  final List<String> _verlofTypes = ['sick', 'holiday', 'personal'];
 
   @override
   void initState() {
@@ -219,25 +227,37 @@ class _DashboardState extends State<Dashboard> {
     }
     setState(() => _isSubmitting = true);
     _lastSubmitTime = DateTime.now();
+
     if (!await _validateSession()) {
       _showSnackBar('Session expired. Please log in again.', isError: true);
       setState(() => _isSubmitting = false);
       return;
     }
+
     final userId = supabase.auth.currentUser?.id;
     if (userId == null) {
       _showSnackBar('Not logged in.', isError: true);
       setState(() => _isSubmitting = false);
       return;
     }
+
     final startTxt = _startDateController.text.trim();
     final endTxt = _endDateController.text.trim();
-    final reason = _reasonController.text.trim();
-    if (startTxt.isEmpty || endTxt.isEmpty || reason.isEmpty) {
-      _showSnackBar('Please fill all fields.', isError: true);
+    final customReason = _reasonController.text.trim();
+    final quickType = _selectedVerlofType;
+
+    if (startTxt.isEmpty || endTxt.isEmpty) {
+      _showSnackBar('Please select start and end date.', isError: true);
       setState(() => _isSubmitting = false);
       return;
     }
+
+    if (quickType == null && customReason.isEmpty) {
+      _showSnackBar('Please select a type or enter a reason.', isError: true);
+      setState(() => _isSubmitting = false);
+      return;
+    }
+
     final startDt = DateTime.parse(startTxt);
     final endDt = DateTime.parse(endTxt);
     if (endDt.isBefore(startDt)) {
@@ -245,6 +265,7 @@ class _DashboardState extends State<Dashboard> {
       setState(() => _isSubmitting = false);
       return;
     }
+
     final daysRequested = _calculateWorkdays(startDt, endDt);
     if (daysRequested > _remainingLeaveDays) {
       _showSnackBar(
@@ -253,21 +274,31 @@ class _DashboardState extends State<Dashboard> {
       setState(() => _isSubmitting = false);
       return;
     }
+
     final startUtc =
         DateTime(startDt.year, startDt.month, startDt.day).toUtc().toIso8601String();
     final endUtc =
         DateTime(endDt.year, endDt.month, endDt.day).toUtc().toIso8601String();
+
+    // Smart reason logic
+    final String reasonText = customReason.isNotEmpty
+        ? customReason
+        : (quickType == 'personal' ? 'Personal reason' : quickType!);
+
     try {
       await supabase.from('verlof').insert({
         'start': startUtc,
         'end_time': endUtc,
-        'type': reason,
+        'reason': reasonText,         // ← NOW 'reason'
+        'verlof_type': quickType,     // ← Quick type
         'approved': false,
         'user_id': userId,
         'days_count': daysRequested,
       }).select();
+
       _showSnackBar('Request submitted successfully!');
       _clearForm();
+      setState(() => _selectedVerlofType = null);
       await _fetchRequests();
       _fetchLeaveBalance();
     } catch (e) {
@@ -278,84 +309,76 @@ class _DashboardState extends State<Dashboard> {
   }
 
   Future<void> _deleteRequest(dynamic requestId) async {
-  if (_lastDeleteTime != null &&
-      DateTime.now().difference(_lastDeleteTime!) < _rateLimitDuration) {
-    _showSnackBar('Please wait before deleting again.', isError: true);
-    return;
-  }
-  _lastDeleteTime = DateTime.now();
-
-  final confirm = await showDialog<bool>(
-    context: context,
-    builder: (_) => AlertDialog(
-      title: const Text('Delete Request'),
-      content: const Text('This cannot be undone. Proceed?'),
-      actions: [
-        TextButton(onPressed: () => Navigator.pop(context, false), child: const Text('Cancel')),
-        TextButton(onPressed: () => Navigator.pop(context, true), child: const Text('Delete', style: TextStyle(color: Colors.red))),
-      ],
-    ),
-  );
-  if (confirm != true) return;
-
-  try {
-    final id = requestId is int ? requestId : (requestId is String ? int.tryParse(requestId) : null);
-    if (id == null) throw 'Invalid ID';
-
-    // Get request BEFORE deleting
-    final req = _requests.firstWhere((r) => r['id'] == id);
-    final wasApproved = req['approved'] == true;
-    final days = req['days_count'] as int;
-    final userId = req['user_id'];
-
-    // Delete from DB
-    await supabase.from('verlof').delete().eq('id', id);
-
-    // REFUND if it was approved
-    if (wasApproved) {
-      await supabase.rpc('decrement_leave_used', params: {
-        'p_user_id': userId,
-        'p_days': days,
-      });
+    if (_lastDeleteTime != null &&
+        DateTime.now().difference(_lastDeleteTime!) < _rateLimitDuration) {
+      _showSnackBar('Please wait before deleting again.', isError: true);
+      return;
     }
+    _lastDeleteTime = DateTime.now();
 
-    _showSnackBar('Request deleted successfully.');
-    await _fetchRequests();
-    if (userId == supabase.auth.currentUser?.id) {
-      await _fetchLeaveBalance();
-    }
+    final confirm = await showDialog<bool>(
+      context: context,
+      builder: (_) => AlertDialog(
+        title: const Text('Delete Request'),
+        content: const Text('This cannot be undone. Proceed?'),
+        actions: [
+          TextButton(onPressed: () => Navigator.pop(context, false), child: const Text('Cancel')),
+          TextButton(onPressed: () => Navigator.pop(context, true), child: const Text('Delete', style: TextStyle(color: Colors.red))),
+        ],
+      ),
+    );
+    if (confirm != true) return;
+
+    try {
+      final id = requestId is int ? requestId : (requestId is String ? int.tryParse(requestId) : null);
+      if (id == null) throw 'Invalid ID';
+
+      final req = _requests.firstWhere((r) => r['id'] == id);
+      final wasApproved = req['approved'] == true;
+      final days = req['days_count'] as int;
+      final userId = req['user_id'];
+
+      await supabase.from('verlof').delete().eq('id', id);
+
+      if (wasApproved) {
+        await supabase.rpc('decrement_leave_used', params: {
+          'p_user_id': userId,
+          'p_days': days,
+        });
+      }
+
+      _showSnackBar('Request deleted successfully.');
+      await _fetchRequests();
+      if (userId == supabase.auth.currentUser?.id) {
+        await _fetchLeaveBalance();
+      }
     } catch (e) {
       _showSnackBar('Failed to delete request: $e', isError: true);
     }
   }
 
   Future<void> _updateRequestStatus(int id, bool? approved) async {
-  try {
-    // Find request locally
-    final req = _requests.firstWhere((r) => r['id'] == id);
-    final userId = req['user_id'];
-    final days = req['days_count'] as int;
+    try {
+      final req = _requests.firstWhere((r) => r['id'] == id);
+      final userId = req['user_id'];
+      final days = req['days_count'] as int;
 
-    // UPDATE DB
-    await supabase.from('verlof').update({'approved': approved}).eq('id', id);
+      await supabase.from('verlof').update({'approved': approved}).eq('id', id);
 
-    // ONLY increment if APPROVING (true)
-    if (approved == true) {
-      await supabase.rpc('increment_leave_used', params: {
-        'p_user_id': userId,
-        'p_days': days,
-      });
-    }
+      if (approved == true) {
+        await supabase.rpc('increment_leave_used', params: {
+          'p_user_id': userId,
+          'p_days': days,
+        });
+      }
 
-    // SUCCESS
-    final status = approved == true ? 'approved' : approved == false ? 'set to pending' : 'denied';
-    _showSnackBar('Request $status.');
+      final status = approved == true ? 'approved' : approved == false ? 'set to pending' : 'denied';
+      _showSnackBar('Request $status.');
 
-    // REFRESH DATA
-    await _fetchRequests();
-    if (userId == supabase.auth.currentUser?.id) {
-      await _fetchLeaveBalance();
-    }
+      await _fetchRequests();
+      if (userId == supabase.auth.currentUser?.id) {
+        await _fetchLeaveBalance();
+      }
     } catch (e) {
       _showSnackBar('Failed to update: $e', isError: true);
     }
@@ -377,6 +400,7 @@ class _DashboardState extends State<Dashboard> {
     _startDateController.clear();
     _endDateController.clear();
     _reasonController.clear();
+    _selectedVerlofType = null;
   }
 
   void _showSnackBar(String message, {bool isError = false}) {
@@ -394,6 +418,20 @@ class _DashboardState extends State<Dashboard> {
   List<Map<String, dynamic>> _getEventsForDay(DateTime day) {
     final key = DateTime(day.year, day.month, day.day);
     return _events[key] ?? [];
+  }
+
+  // === DISPLAY TITLE LOGIC ===
+  String _getDisplayTitle(Map<String, dynamic> req) {
+    final verlofType = req['verlof_type'] as String?;
+    final reasonText = req['reason'] as String?;
+
+    if (verlofType != null) {
+      final capitalized = verlofType[0].toUpperCase() + verlofType.substring(1);
+      return reasonText != null && reasonText.toLowerCase() != verlofType
+          ? '$capitalized: $reasonText'
+          : capitalized;
+    }
+    return _sanitizeInput(reasonText ?? 'N/A');
   }
 
   @override
@@ -423,66 +461,47 @@ class _DashboardState extends State<Dashboard> {
                                 ),
                                 padding: const EdgeInsets.all(12),
                                 child: TableCalendar(
-                                  firstDay: DateTime.now()
-                                      .subtract(const Duration(days: 365)),
-                                  lastDay: DateTime.now()
-                                      .add(const Duration(days: 365)),
+                                  firstDay: DateTime.now().subtract(const Duration(days: 365)),
+                                  lastDay: DateTime.now().add(const Duration(days: 365)),
                                   focusedDay: _focusedDay,
                                   calendarFormat: CalendarFormat.month,
                                   headerStyle: const HeaderStyle(
                                     formatButtonVisible: false,
                                     titleCentered: true,
-                                    titleTextStyle: TextStyle(
-                                        color: Colors.white, fontSize: 16),
-                                    leftChevronIcon: Icon(Icons.chevron_left,
-                                        color: Colors.white),
-                                    rightChevronIcon: Icon(Icons.chevron_right,
-                                        color: Colors.white),
+                                    titleTextStyle: TextStyle(color: Colors.white, fontSize: 16),
+                                    leftChevronIcon: Icon(Icons.chevron_left, color: Colors.white),
+                                    rightChevronIcon: Icon(Icons.chevron_right, color: Colors.white),
                                   ),
                                   daysOfWeekStyle: const DaysOfWeekStyle(
                                     weekdayStyle: TextStyle(color: Colors.white70),
-                                    weekendStyle:
-                                        TextStyle(color: Colors.redAccent),
+                                    weekendStyle: TextStyle(color: Colors.redAccent),
                                   ),
                                   calendarStyle: const CalendarStyle(
                                     outsideDaysVisible: false,
-                                    weekendTextStyle:
-                                        TextStyle(color: Colors.redAccent),
-                                    defaultTextStyle:
-                                        TextStyle(color: Colors.white),
-                                    selectedDecoration: BoxDecoration(
-                                        color: Colors.red,
-                                        shape: BoxShape.circle),
-                                    todayDecoration: BoxDecoration(
-                                        color: Color(0xFFFF9800),
-                                        shape: BoxShape.circle),
+                                    weekendTextStyle: TextStyle(color: Colors.redAccent),
+                                    defaultTextStyle: TextStyle(color: Colors.white),
+                                    selectedDecoration: BoxDecoration(color: Colors.red, shape: BoxShape.circle),
+                                    todayDecoration: BoxDecoration(color: Color(0xFFFF9800), shape: BoxShape.circle),
                                   ),
                                   startingDayOfWeek: StartingDayOfWeek.monday,
-                                  selectedDayPredicate: (d) =>
-                                      isSameDay(_selectedDay, d),
+                                  selectedDayPredicate: (d) => isSameDay(_selectedDay, d),
                                   onDaySelected: (s, f) => setState(() {
                                     _selectedDay = s;
                                     _focusedDay = f;
                                   }),
-                                  onPageChanged: (f) =>
-                                      setState(() => _focusedDay = f),
+                                  onPageChanged: (f) => setState(() => _focusedDay = f),
                                   eventLoader: _getEventsForDay,
                                   calendarBuilders: CalendarBuilders(
                                     markerBuilder: (c, day, ev) {
                                       if (ev.isEmpty) return null;
                                       return Row(
-                                        mainAxisAlignment:
-                                            MainAxisAlignment.center,
+                                        mainAxisAlignment: MainAxisAlignment.center,
                                         children: ev.take(3).map((e) {
-                                          final req =
-                                              e as Map<String, dynamic>;
-                                          final approved =
-                                              req['approved'] == true;
-                                          final denied =
-                                              req['approved'] == null;
+                                          final req = e as Map<String, dynamic>;
+                                          final approved = req['approved'] == true;
+                                          final denied = req['approved'] == null;
                                           return Container(
-                                            margin: const EdgeInsets.symmetric(
-                                                horizontal: 1),
+                                            margin: const EdgeInsets.symmetric(horizontal: 1),
                                             width: 5,
                                             height: 5,
                                             decoration: BoxDecoration(
@@ -503,39 +522,31 @@ class _DashboardState extends State<Dashboard> {
                                       return Tooltip(
                                         message: ev
                                             .map((e) {
-                                              final start = DateTime.tryParse(
-                                                      e['start'] ?? '')
-                                                  ?.toLocal();
-                                              final end = DateTime.tryParse(
-                                                      e['end_time'] ?? '')
-                                                  ?.toLocal();
-                                              final status =
-                                                  e['approved'] == true
-                                                      ? 'Approved'
-                                                      : e['approved'] == false
-                                                          ? 'Pending'
-                                                          : 'Denied';
-                                              return '${e['type']}\n${start != null ? DateFormat('MMM dd').format(start) : ''} - ${end != null ? DateFormat('MMM dd').format(end) : ''}\nStatus: $status';
+                                              final start = DateTime.tryParse(e['start'] ?? '')?.toLocal();
+                                              final end = DateTime.tryParse(e['end_time'] ?? '')?.toLocal();
+                                              final status = e['approved'] == true
+                                                  ? 'Approved'
+                                                  : e['approved'] == false
+                                                      ? 'Pending'
+                                                      : 'Denied';
+                                              final title = _getDisplayTitle(e);
+                                              return '$title\n${start != null ? DateFormat('MMM dd').format(start) : ''} - ${end != null ? DateFormat('MMM dd').format(end) : ''}\nStatus: $status';
                                             })
                                             .join('\n\n'),
                                         preferBelow: false,
                                         decoration: BoxDecoration(
                                           color: Colors.black87,
-                                          borderRadius:
-                                              BorderRadius.circular(8),
+                                          borderRadius: BorderRadius.circular(8),
                                         ),
-                                        textStyle: const TextStyle(
-                                            color: Colors.white, fontSize: 12),
+                                        textStyle: const TextStyle(color: Colors.white, fontSize: 12),
                                         child: Container(
                                           margin: const EdgeInsets.all(6),
                                           alignment: Alignment.center,
                                           child: Text(
                                             '${day.day}',
                                             style: TextStyle(
-                                              color: day.weekday ==
-                                                          DateTime.saturday ||
-                                                      day.weekday ==
-                                                          DateTime.sunday
+                                              color: day.weekday == DateTime.saturday ||
+                                                      day.weekday == DateTime.sunday
                                                   ? Colors.redAccent
                                                   : Colors.white,
                                             ),
@@ -548,8 +559,7 @@ class _DashboardState extends State<Dashboard> {
                               ),
                               const SizedBox(height: 12),
                               Container(
-                                padding: const EdgeInsets.symmetric(
-                                    horizontal: 12, vertical: 8),
+                                padding: const EdgeInsets.symmetric(horizontal: 12, vertical: 8),
                                 decoration: BoxDecoration(
                                   color: Colors.grey[850],
                                   borderRadius: BorderRadius.circular(12),
@@ -587,40 +597,27 @@ class _DashboardState extends State<Dashboard> {
                               crossAxisAlignment: CrossAxisAlignment.start,
                               children: [
                                 Row(
-                                  mainAxisAlignment:
-                                      MainAxisAlignment.spaceBetween,
+                                  mainAxisAlignment: MainAxisAlignment.spaceBetween,
                                   children: [
                                     Text(
-                                      DateFormat('MMMM yyyy')
-                                          .format(_focusedDay),
-                                      style: const TextStyle(
-                                          fontSize: 20,
-                                          fontWeight: FontWeight.bold),
+                                      DateFormat('MMMM yyyy').format(_focusedDay),
+                                      style: const TextStyle(fontSize: 20, fontWeight: FontWeight.bold),
                                     ),
                                     ToggleButtons(
                                       borderRadius: BorderRadius.circular(20),
                                       selectedColor: Colors.white,
                                       fillColor: Colors.grey[700],
                                       color: Colors.grey[600],
-                                      constraints: const BoxConstraints(
-                                          minHeight: 32, minWidth: 60),
+                                      constraints: const BoxConstraints(minHeight: 32, minWidth: 60),
                                       isSelected: [
                                         _calendarFormat == CalendarFormat.month,
                                         _calendarFormat == CalendarFormat.week,
                                       ],
                                       onPressed: (i) => setState(() => _calendarFormat =
-                                          i == 0
-                                              ? CalendarFormat.month
-                                              : CalendarFormat.week),
+                                          i == 0 ? CalendarFormat.month : CalendarFormat.week),
                                       children: const [
-                                        Padding(
-                                            padding: EdgeInsets.symmetric(
-                                                horizontal: 12),
-                                            child: Text('Month')),
-                                        Padding(
-                                            padding: EdgeInsets.symmetric(
-                                                horizontal: 12),
-                                            child: Text('Week')),
+                                        Padding(padding: EdgeInsets.symmetric(horizontal: 12), child: Text('Month')),
+                                        Padding(padding: EdgeInsets.symmetric(horizontal: 12), child: Text('Week')),
                                       ],
                                     ),
                                   ],
@@ -631,8 +628,7 @@ class _DashboardState extends State<Dashboard> {
                                     const Text('Work Week'),
                                     Switch(
                                       value: _showWorkWeek,
-                                      onChanged: (v) =>
-                                          setState(() => _showWorkWeek = v),
+                                      onChanged: (v) => setState(() => _showWorkWeek = v),
                                       activeColor: Colors.red,
                                     ),
                                   ],
@@ -641,53 +637,40 @@ class _DashboardState extends State<Dashboard> {
                                 const Divider(height: 1, thickness: 1),
                                 const SizedBox(height: 16),
                                 TableCalendar(
-                                  firstDay: DateTime.now()
-                                      .subtract(const Duration(days: 365)),
-                                  lastDay: DateTime.now()
-                                      .add(const Duration(days: 365)),
+                                  firstDay: DateTime.now().subtract(const Duration(days: 365)),
+                                  lastDay: DateTime.now().add(const Duration(days: 365)),
                                   focusedDay: _focusedDay,
                                   calendarFormat: _calendarFormat,
                                   startingDayOfWeek: StartingDayOfWeek.monday,
                                   headerVisible: false,
-                                  selectedDayPredicate: (d) =>
-                                      isSameDay(_selectedDay, d),
+                                  selectedDayPredicate: (d) => isSameDay(_selectedDay, d),
                                   onDaySelected: (s, f) => setState(() {
                                     _selectedDay = s;
                                     _focusedDay = f;
                                   }),
-                                  onPageChanged: (f) =>
-                                      setState(() => _focusedDay = f),
+                                  onPageChanged: (f) => setState(() => _focusedDay = f),
                                   eventLoader: _getEventsForDay,
                                   enabledDayPredicate: _showWorkWeek
-                                      ? (d) => d.weekday != DateTime.saturday &&
-                                          d.weekday != DateTime.sunday
+                                      ? (d) => d.weekday != DateTime.saturday && d.weekday != DateTime.sunday
                                       : null,
                                   calendarStyle: CalendarStyle(
                                     outsideDaysVisible: false,
                                     weekendTextStyle: TextStyle(
-                                      color: _showWorkWeek
-                                          ? Colors.grey[400]
-                                          : Colors.red,
+                                      color: _showWorkWeek ? Colors.grey[400] : Colors.red,
                                     ),
-                                    disabledTextStyle:
-                                        TextStyle(color: Colors.grey[400]),
+                                    disabledTextStyle: TextStyle(color: Colors.grey[400]),
                                   ),
                                   calendarBuilders: CalendarBuilders(
                                     markerBuilder: (c, day, ev) {
                                       if (ev.isEmpty) return null;
                                       return Row(
-                                        mainAxisAlignment:
-                                            MainAxisAlignment.center,
+                                        mainAxisAlignment: MainAxisAlignment.center,
                                         children: ev.take(3).map((e) {
-                                          final req =
-                                              e as Map<String, dynamic>;
-                                          final approved =
-                                              req['approved'] == true;
-                                          final denied =
-                                              req['approved'] == null;
+                                          final req = e as Map<String, dynamic>;
+                                          final approved = req['approved'] == true;
+                                          final denied = req['approved'] == null;
                                           return Container(
-                                            margin: const EdgeInsets.symmetric(
-                                                horizontal: 1),
+                                            margin: const EdgeInsets.symmetric(horizontal: 1),
                                             width: 6,
                                             height: 6,
                                             decoration: BoxDecoration(
@@ -706,15 +689,42 @@ class _DashboardState extends State<Dashboard> {
                                 ),
                                 const SizedBox(height: 32),
                                 Text(
-                                  _isManager
-                                      ? 'All Team Requests'
-                                      : 'New Leave Request',
-                                  style: const TextStyle(
-                                      fontSize: 18,
-                                      fontWeight: FontWeight.bold),
+                                  _isManager ? 'All Team Requests' : 'New Leave Request',
+                                  style: const TextStyle(fontSize: 18, fontWeight: FontWeight.bold),
                                 ),
                                 const SizedBox(height: 16),
+
+                                // === NEW FORM: QUICK TYPE + CUSTOM REASON ===
                                 if (!_isManager) ...[
+                                  DropdownButtonFormField<String>(
+                                    value: _selectedVerlofType,
+                                    decoration: const InputDecoration(
+                                      labelText: 'Quick Type',
+                                      border: OutlineInputBorder(),
+                                    ),
+                                    hint: const Text('Select type (optional)'),
+                                    items: _verlofTypes.map((type) => DropdownMenuItem(
+                                      value: type,
+                                      child: Text(type[0].toUpperCase() + type.substring(1)),
+                                    )).toList(),
+                                    onChanged: (value) {
+                                      setState(() => _selectedVerlofType = value);
+                                      if (value != null && value != 'personal') {
+                                        _reasonController.text = value;
+                                      }
+                                    },
+                                  ),
+                                  const SizedBox(height: 12),
+                                  TextField(
+                                    controller: _reasonController,
+                                    decoration: const InputDecoration(
+                                      labelText: 'Custom Reason',
+                                      hintText: 'e.g. Dentist, Wedding, etc. (optional if quick type selected)',
+                                      border: OutlineInputBorder(),
+                                    ),
+                                    maxLines: 3,
+                                  ),
+                                  const SizedBox(height: 12),
                                   TextField(
                                     controller: _startDateController,
                                     decoration: const InputDecoration(
@@ -736,93 +746,63 @@ class _DashboardState extends State<Dashboard> {
                                     readOnly: true,
                                     onTap: () => _pickDate(_endDateController),
                                   ),
-                                  const SizedBox(height: 12),
-                                  TextField(
-                                    controller: _reasonController,
-                                    decoration: const InputDecoration(
-                                      labelText: 'Reason',
-                                      border: OutlineInputBorder(),
-                                    ),
-                                    maxLines: 3,
-                                  ),
                                   const SizedBox(height: 16),
                                   SizedBox(
                                     width: double.infinity,
                                     child: ElevatedButton(
-                                      onPressed: _isSubmitting
-                                          ? null
-                                          : _submitRequest,
+                                      onPressed: _isSubmitting ? null : _submitRequest,
                                       style: ElevatedButton.styleFrom(
                                         backgroundColor: Colors.red,
-                                        padding: const EdgeInsets.symmetric(
-                                            vertical: 16),
+                                        padding: const EdgeInsets.symmetric(vertical: 16),
                                         shape: RoundedRectangleBorder(
-                                            borderRadius:
-                                                BorderRadius.circular(12)),
+                                          borderRadius: BorderRadius.circular(12),
+                                        ),
                                       ),
                                       child: _isSubmitting
-                                          ? const CircularProgressIndicator(
-                                              color: Colors.white)
-                                          : const Text('Submit',
-                                              style: TextStyle(
-                                                  fontSize: 16,
-                                                  color: Colors.white)),
+                                          ? const CircularProgressIndicator(color: Colors.white)
+                                          : const Text('Submit', style: TextStyle(fontSize: 16, color: Colors.white)),
                                     ),
                                   ),
                                   const SizedBox(height: 32),
                                 ],
+
                                 Text(
                                   _isManager ? 'Team Requests' : 'My Requests',
-                                  style: Theme.of(context)
-                                      .textTheme
-                                      .titleLarge
-                                      ?.copyWith(fontWeight: FontWeight.bold),
+                                  style: Theme.of(context).textTheme.titleLarge?.copyWith(fontWeight: FontWeight.bold),
                                 ),
                                 const SizedBox(height: 12),
                                 _requests.isEmpty
                                     ? const Text('No requests yet.')
                                     : ListView.builder(
                                         shrinkWrap: true,
-                                        physics:
-                                            const NeverScrollableScrollPhysics(),
+                                        physics: const NeverScrollableScrollPhysics(),
                                         itemCount: _requests.length,
                                         itemBuilder: (c, i) {
                                           final req = _requests[i];
-                                          final start = DateTime.tryParse(
-                                                  req['start'] ?? '')
-                                              ?.toLocal();
-                                          final end = DateTime.tryParse(
-                                                  req['end_time'] ?? '')
-                                              ?.toLocal();
+                                          final start = DateTime.tryParse(req['start'] ?? '')?.toLocal();
+                                          final end = DateTime.tryParse(req['end_time'] ?? '')?.toLocal();
                                           final status = req['approved'] == true
                                               ? 'Approved'
                                               : req['approved'] == false
                                                   ? 'Pending'
                                                   : 'Denied';
-                                          final days =
-                                              req['days_count'] as int? ?? 0;
-                                          final isOwn = req['user_id'] ==
-                                              supabase.auth.currentUser?.id;
+                                          final days = req['days_count'] as int? ?? 0;
+                                          final isOwn = req['user_id'] == supabase.auth.currentUser?.id;
+
                                           return Card(
-                                            margin: const EdgeInsets.symmetric(
-                                                vertical: 6),
+                                            margin: const EdgeInsets.symmetric(vertical: 6),
                                             child: ListTile(
-                                              title: Text(
-                                                  _sanitizeInput(req['type'] ?? 'N/A')),
+                                              title: Text(_getDisplayTitle(req)),
                                               subtitle: Column(
-                                                crossAxisAlignment:
-                                                    CrossAxisAlignment.start,
+                                                crossAxisAlignment: CrossAxisAlignment.start,
                                                 children: [
                                                   if (start != null)
-                                                    Text(
-                                                        'Start: ${DateFormat('yyyy-MM-dd').format(start)}'),
+                                                    Text('Start: ${DateFormat('yyyy-MM-dd').format(start)}'),
                                                   if (end != null)
-                                                    Text(
-                                                        'End: ${DateFormat('yyyy-MM-dd').format(end)}'),
+                                                    Text('End: ${DateFormat('yyyy-MM-dd').format(end)}'),
                                                   Text('Status: $status'),
                                                   Text('Days: $days'),
-                                                  if (_isManager)
-                                                    Text('User: ${req['user_id']}'),
+                                                  if (_isManager) Text('User: ${req['user_id']}'),
                                                 ],
                                               ),
                                               trailing: Row(
@@ -831,40 +811,27 @@ class _DashboardState extends State<Dashboard> {
                                                   if (_isManager) ...[
                                                     if (req['approved'] != true)
                                                       IconButton(
-                                                        icon: const Icon(Icons.check,
-                                                            color: Colors.green),
-                                                        onPressed: () =>
-                                                            _updateRequestStatus(
-                                                                req['id'], true),
+                                                        icon: const Icon(Icons.check, color: Colors.green),
+                                                        onPressed: () => _updateRequestStatus(req['id'], true),
                                                         tooltip: 'Approve',
                                                       ),
                                                     if (req['approved'] != false)
                                                       IconButton(
-                                                        icon: const Icon(Icons.hourglass_empty,
-                                                            color: Colors.orange),
-                                                        onPressed: () =>
-                                                            _updateRequestStatus(
-                                                                req['id'], false),
+                                                        icon: const Icon(Icons.hourglass_empty, color: Colors.orange),
+                                                        onPressed: () => _updateRequestStatus(req['id'], false),
                                                         tooltip: 'Pending',
                                                       ),
                                                     if (req['approved'] != null)
                                                       IconButton(
-                                                        icon: const Icon(Icons.close,
-                                                            color: Colors.red),
-                                                        onPressed: () =>
-                                                            _updateRequestStatus(
-                                                                req['id'], null),
+                                                        icon: const Icon(Icons.close, color: Colors.red),
+                                                        onPressed: () => _updateRequestStatus(req['id'], null),
                                                         tooltip: 'Deny',
                                                       ),
                                                   ],
                                                   if (isOwn || _isManager)
                                                     IconButton(
-                                                      icon: const Icon(
-                                                          Icons.delete,
-                                                          color: Colors.red),
-                                                      onPressed: () =>
-                                                          _deleteRequest(
-                                                              req['id']),
+                                                      icon: const Icon(Icons.delete, color: Colors.red),
+                                                      onPressed: () => _deleteRequest(req['id']),
                                                     ),
                                                 ],
                                               ),
