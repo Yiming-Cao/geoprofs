@@ -33,11 +33,13 @@ dependencies:
   flutter_svg: ^2.0.9
   table_calendar: ^3.0.9
   supabase_flutter: ^2.0.0
-
+  image_picker: ^1.0.7
+  http: ^1.2.1
 
   # The following adds the Cupertino Icons font to your application.
   # Use with the CupertinoIcons class for iOS style icons.
   cupertino_icons: ^1.0.8
+supabase_flutter: ^2.10.2
 
 dev_dependencies:
   flutter_test:
@@ -94,3 +96,8 @@ flutter:
   # see https://flutter.dev/to/font-from-package
   assets:
   - web/icons/geoprofs.png
+
+  fonts:
+    - family: KaushanScript
+      fonts:
+        - asset: lib/include/KaushanScript-Regular.ttf
