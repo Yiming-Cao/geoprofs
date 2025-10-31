@@ -39,7 +39,7 @@ class _HomePageState extends State<HomePage> {
           final list = await supabase.from('permissions').select('role').eq('user_uuid', user.id).limit(1);
           if (list is List && list.isNotEmpty) res = list.first;
         }
-        if (res != null && res is Map && (res['role']?.toString().toLowerCase() == 'admin')) {
+        if (res != null && res is Map && (res['role']?.toString().toLowerCase() == 'office_manager')) {
           _isAdmin = true;
         } else {
           _isAdmin = false;
@@ -68,39 +68,48 @@ class _HomePageState extends State<HomePage> {
               child: Column(
                 children: [
                   const SizedBox(height: 16.0),
+                  // 欢迎卡片
                   Card(
                     elevation: 4.0,
                     shape: RoundedRectangleBorder(
                       borderRadius: BorderRadius.circular(12.0),
                     ),
                     color: Colors.white,
-                    child: Padding(
-                      padding: const EdgeInsets.all(16.0),
-                      child: Column(
-                        children: [
-                          const Text(
-                            'Welcome to GeoProfs! With this app you can easily plan your days off',
-                            style: TextStyle(
-                              fontSize: 20.0,
-                              fontWeight: FontWeight.bold,
-                              color: Colors.black87,
-                            ),
-                            textAlign: TextAlign.center,
-                          ),
-                          const SizedBox(height: 12),
-                          // Admin button area
-                          if (_checkingAdmin)
-                            const SizedBox(height: 24, width: 24, child: CircularProgressIndicator())
-                          else if (_isAdmin)
-                            ElevatedButton.icon(
-                              icon: const Icon(Icons.admin_panel_settings),
-                              label: const Text('Admin Panel'),
-                              onPressed: () => Navigator.pushNamed(context, '/admin'),
-                            ),
-                        ],
+                    child: const Padding(
+                      padding: EdgeInsets.all(16.0),
+                      child: Text(
+                        'Welcome to GeoProfs! With this app you can easily plan your days off',
+                        style: TextStyle(
+                          fontSize: 20.0,
+                          fontWeight: FontWeight.bold,
+                          color: Colors.black87,
+                        ),
+                        textAlign: TextAlign.center,
                       ),
                     ),
                   ),
+                  // Admin 按钮区域，与卡片分开
+                  const SizedBox(height: 20), // 调整这个高度可以改变按钮与卡片的距离
+                  if (_checkingAdmin)
+                    const SizedBox(height: 24, width: 24, child: CircularProgressIndicator())
+                  else if (_isAdmin)
+                    Card(
+                      elevation: 2.0,
+                      shape: RoundedRectangleBorder(
+                        borderRadius: BorderRadius.circular(8.0),
+                      ),
+                      child: Padding(
+                        padding: const EdgeInsets.all(8.0),
+                        child: ElevatedButton.icon(
+                          icon: const Icon(Icons.admin_panel_settings),
+                          label: const Text('Admin Panel'),
+                          style: ElevatedButton.styleFrom(
+                            padding: const EdgeInsets.symmetric(horizontal: 24, vertical: 12),
+                          ),
+                          onPressed: () => Navigator.pushNamed(context, '/admin'),
+                        ),
+                      ),
+                    ),
                 ],
               ),
             ),
