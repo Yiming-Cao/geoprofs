@@ -580,101 +580,102 @@ class _MobileLayoutState extends State<MobileLayout> {
     return Scaffold(
       backgroundColor: Colors.transparent,
       body: BackgroundContainer(
-        child: Column(
+        child: Stack(  // 使用 Stack 实现分层
           children: [
-            HeaderBar(),
+            // ==================== 滚动内容层 ====================
+            Column(
+              children: [
+                HeaderBar(),
 
-            // 主内容
-            Expanded(
-              child: SingleChildScrollView(
-                padding: const EdgeInsets.only(top: 4, left: 16, right: 16, bottom: 100),
-                child: Column(
-                  crossAxisAlignment: CrossAxisAlignment.start,
-                  children: [
-                    // 用户信息卡片
-                    Container(
-                      width: double.infinity,
-                      padding: const EdgeInsets.all(16),
-                      margin: const EdgeInsets.only(bottom: 16),
-                      decoration: BoxDecoration(
-                        color: Colors.white,
-                        borderRadius: BorderRadius.circular(16),
-                        boxShadow: [BoxShadow(color: Colors.black.withOpacity(0.05), blurRadius: 8, offset: const Offset(0, 2))],
-                      ),
-                      child: Row(
-                        children: [
-                          CircleAvatar(radius: 32, backgroundImage: NetworkImage(displayAvatar)),
-                          const SizedBox(width: 12),
-                          Expanded(
-                            child: Column(
-                              crossAxisAlignment: CrossAxisAlignment.start,
-                              children: [
-                                Text(displayName, style: const TextStyle(fontWeight: FontWeight.bold, fontSize: 16)),
-                                Text(email, style: const TextStyle(fontSize: 13, color: Colors.grey)),
-                              ],
-                            ),
+                // 可滚动的主内容
+                Expanded(
+                  child: SingleChildScrollView(
+                    padding: const EdgeInsets.only(top: 4, left: 16, right: 16, bottom: 100), // 预留 Navbar 空间
+                    child: Column(
+                      crossAxisAlignment: CrossAxisAlignment.start,
+                      children: [
+                        // 用户信息卡片
+                        Container(
+                          width: double.infinity,
+                          padding: const EdgeInsets.all(16),
+                          margin: const EdgeInsets.only(bottom: 16),
+                          decoration: BoxDecoration(
+                            color: Colors.white,
+                            borderRadius: BorderRadius.circular(16),
+                            boxShadow: [BoxShadow(color: Colors.black.withOpacity(0.05), blurRadius: 8, offset: const Offset(0, 2))],
                           ),
-                          IconButton(
-                            icon: const Icon(Icons.settings),
-                            onPressed: () => _showAccountDialog(context, user),
+                          child: Row(
+                            children: [
+                              CircleAvatar(radius: 32, backgroundImage: NetworkImage(displayAvatar)),
+                              const SizedBox(width: 12),
+                              Expanded(
+                                child: Column(
+                                  crossAxisAlignment: CrossAxisAlignment.start,
+                                  children: [
+                                    Text(displayName, style: const TextStyle(fontWeight: FontWeight.bold, fontSize: 16)),
+                                    Text(email, style: const TextStyle(fontSize: 13, color: Colors.grey)),
+                                  ],
+                                ),
+                              ),
+                              IconButton(
+                                icon: const Icon(Icons.settings),
+                                onPressed: () => _showAccountDialog(context, user),
+                              ),
+                            ],
                           ),
-                        ],
-                      ),
-                    ),
+                        ),
 
-                    // 侧边栏按钮组
-                    Container(
-                      width: double.infinity,
-                      padding: const EdgeInsets.all(16),
-                      decoration: BoxDecoration(
-                        color: Colors.white,
-                        borderRadius: BorderRadius.circular(16),
-                        boxShadow: [BoxShadow(color: Colors.black.withOpacity(0.05), blurRadius: 8, offset: const Offset(0, 2))],
-                      ),
-                      child: Column(
-                        children: [
-                          _SidebarItem(icon: Icons.home, label: 'Home', onTap: () => _onSidebarTap('Home')),
-                          _SidebarItem(icon: Icons.folder, label: 'Work', onTap: () => _onSidebarTap('Work')),
-                          _SidebarItem(icon: Icons.message, label: 'Messages', onTap: () => _onSidebarTap('Messages')),
-                          _SidebarItem(icon: Icons.beach_access, label: 'Leave', onTap: () => _onSidebarTap('Leave')),
-                        ],
-                      ),
-                    ),
+                        // 侧边栏按钮组
+                        Container(
+                          width: double.infinity,
+                          padding: const EdgeInsets.all(16),
+                          decoration: BoxDecoration(
+                            color: Colors.white,
+                            borderRadius: BorderRadius.circular(16),
+                            boxShadow: [BoxShadow(color: Colors.black.withOpacity(0.05), blurRadius: 8, offset: const Offset(0, 2))],
+                          ),
+                          child: Column(
+                            children: [
+                              _SidebarItem(icon: Icons.home, label: 'Home', onTap: () => _onSidebarTap('Home')),
+                              _SidebarItem(icon: Icons.folder, label: 'Work', onTap: () => _onSidebarTap('Work')),
+                              _SidebarItem(icon: Icons.message, label: 'Messages', onTap: () => _onSidebarTap('Messages')),
+                              _SidebarItem(icon: Icons.beach_access, label: 'Leave', onTap: () => _onSidebarTap('Leave')),
+                            ],
+                          ),
+                        ),
 
-                    const SizedBox(height: 16),
+                        const SizedBox(height: 16),
 
-                    // 动态内容区域
-                    Container(
-                      width: double.infinity,
-                      padding: const EdgeInsets.all(16),
-                      decoration: BoxDecoration(
-                        color: Colors.white,
-                        borderRadius: BorderRadius.circular(16),
-                        boxShadow: [BoxShadow(color: Colors.black.withOpacity(0.05), blurRadius: 8, offset: const Offset(0, 2))],
-                      ),
-                      child: _buildContent(),
+                        // 动态内容区域
+                        Container(
+                          width: double.infinity,
+                          padding: const EdgeInsets.all(16),
+                          decoration: BoxDecoration(
+                            color: Colors.white,
+                            borderRadius: BorderRadius.circular(16),
+                            boxShadow: [BoxShadow(color: Colors.black.withOpacity(0.05), blurRadius: 8, offset: const Offset(0, 2))],
+                          ),
+                          child: _buildContent(),
+                        ),
+
+                        // 底部填充（确保最后内容不被遮挡）
+                        const SizedBox(height: 80),
+                      ],
                     ),
-                  ],
+                  ),
                 ),
-              ),
+              ],
             ),
 
-            // 浮动 Navbar
+            // ==================== 浮动 Navbar 层（最上层） ====================
             Padding(
-              padding: const EdgeInsets.symmetric(horizontal: 24),
+              padding: EdgeInsets.symmetric(horizontal: 24),
               child: Align(
                 alignment: Alignment.bottomCenter,
                 child: Container(
-                  margin: const EdgeInsets.only(bottom: 24),
-                  padding: const EdgeInsets.symmetric(vertical: 8, horizontal: 12),
-                  decoration: BoxDecoration(
-                    color: Colors.black.withOpacity(0.75),
-                    borderRadius: BorderRadius.circular(30),
-                    boxShadow: [
-                      BoxShadow(color: Colors.black.withOpacity(0.3), blurRadius: 12, offset: const Offset(0, 4)),
-                    ],
-                  ),
-                  child: const Navbar(),
+                  margin: EdgeInsets.only(bottom: 16),
+                  padding: EdgeInsets.symmetric(vertical: 8, horizontal: 12),
+                  child: Navbar(),
                 ),
               ),
             ),

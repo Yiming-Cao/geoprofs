@@ -323,245 +323,256 @@ class _MobileLayoutState extends State<MobileLayout> {
     return Scaffold(
       backgroundColor: Colors.transparent,
       body: BackgroundContainer(
-        child: Column(
+        child: Stack(
           children: [
-            // HeaderBar 
-            HeaderBar(), 
+            // ==================== 滚动内容层 ====================
+            Column(
+              children: [
+                // HeaderBar
+                HeaderBar(),
 
-            // 
-            Expanded(
-              child: _isLoadingRequests
-                  ? const Center(child: CircularProgressIndicator())
-                  : SingleChildScrollView(
-                      padding: const EdgeInsets.only(
-                          top: 0, left: 16, right: 16, bottom: 120),
-                      child: Column(
-                        crossAxisAlignment: CrossAxisAlignment.start,
-                        children: [
-                          // 
-                          Container(
-                            width: double.infinity,
-                            padding: const EdgeInsets.all(20),
-                            decoration: BoxDecoration(
-                              color: Colors.white,
-                              borderRadius: BorderRadius.circular(24),
-                              boxShadow: [
-                                BoxShadow(
-                                  color: Colors.black.withOpacity(0.05),
-                                  blurRadius: 10,
-                                  offset: const Offset(0, 4),
-                                ),
-                              ],
-                            ),
-                            child: Column(
-                              crossAxisAlignment: CrossAxisAlignment.start,
-                              children: [
-                                // Month/Week
-                                Row(
-                                  mainAxisAlignment: MainAxisAlignment.spaceBetween,
-                                  children: [
-                                    Text(
-                                      DateFormat('MMMM yyyy').format(_focusedDay),
-                                      style: const TextStyle(fontSize: 20, fontWeight: FontWeight.bold),
-                                    ),
-                                    ToggleButtons(
-                                      borderRadius: BorderRadius.circular(20),
-                                      selectedColor: Colors.white,
-                                      fillColor: Colors.grey[700],
-                                      color: Colors.grey[600],
-                                      constraints: const BoxConstraints(minHeight: 36, minWidth: 70),
-                                      isSelected: [
-                                        _calendarFormat == CalendarFormat.month,
-                                        _calendarFormat == CalendarFormat.week,
-                                      ],
-                                      onPressed: (i) => setState(() => _calendarFormat =
-                                          i == 0 ? CalendarFormat.month : CalendarFormat.week),
-                                      children: const [
-                                        Padding(padding: EdgeInsets.symmetric(horizontal: 12), child: Text('Month')),
-                                        Padding(padding: EdgeInsets.symmetric(horizontal: 12), child: Text('Week')),
-                                      ],
+                // 主内容（可滚动）
+                Expanded(
+                  child: _isLoadingRequests
+                      ? const Center(child: CircularProgressIndicator())
+                      : SingleChildScrollView(
+                          padding: const EdgeInsets.only(
+                              top: 0, left: 16, right: 16, bottom: 120), // 预留空间
+                          child: Column(
+                            crossAxisAlignment: CrossAxisAlignment.start,
+                            children: [
+                              // 大卡片（日历 + 表单 + 请求列表）
+                              Container(
+                                width: double.infinity,
+                                padding: const EdgeInsets.all(20),
+                                decoration: BoxDecoration(
+                                  color: Colors.white,
+                                  borderRadius: BorderRadius.circular(24),
+                                  boxShadow: [
+                                    BoxShadow(
+                                      color: Colors.black.withOpacity(0.05),
+                                      blurRadius: 10,
+                                      offset: const Offset(0, 4),
                                     ),
                                   ],
                                 ),
-                                const SizedBox(height: 12),
-                                Row(
+                                child: Column(
+                                  crossAxisAlignment: CrossAxisAlignment.start,
                                   children: [
-                                    const Text('Work Week'),
-                                    Switch(
-                                      value: _showWorkWeek,
-                                      onChanged: (v) => setState(() => _showWorkWeek = v),
-                                      activeColor: Colors.red,
+                                    // Month/Week 切换
+                                    Row(
+                                      mainAxisAlignment: MainAxisAlignment.spaceBetween,
+                                      children: [
+                                        Text(
+                                          DateFormat('MMMM yyyy').format(_focusedDay),
+                                          style: const TextStyle(fontSize: 20, fontWeight: FontWeight.bold),
+                                        ),
+                                        ToggleButtons(
+                                          borderRadius: BorderRadius.circular(20),
+                                          selectedColor: Colors.white,
+                                          fillColor: Colors.grey[700],
+                                          color: Colors.grey[600],
+                                          constraints: const BoxConstraints(minHeight: 36, minWidth: 70),
+                                          isSelected: [
+                                            _calendarFormat == CalendarFormat.month,
+                                            _calendarFormat == CalendarFormat.week,
+                                          ],
+                                          onPressed: (i) => setState(() => _calendarFormat =
+                                              i == 0 ? CalendarFormat.month : CalendarFormat.week),
+                                          children: const [
+                                            Padding(padding: EdgeInsets.symmetric(horizontal: 12), child: Text('Month')),
+                                            Padding(padding: EdgeInsets.symmetric(horizontal: 12), child: Text('Week')),
+                                          ],
+                                        ),
+                                      ],
                                     ),
-                                  ],
-                                ),
-                                const SizedBox(height: 16),
-                                const Divider(height: 1),
-                                const SizedBox(height: 16),
-
-                                // 
-                                TableCalendar(
-                                  firstDay: DateTime.now().subtract(const Duration(days: 365)),
-                                  lastDay: DateTime.now().add(const Duration(days: 365)),
-                                  focusedDay: _focusedDay,
-                                  calendarFormat: _calendarFormat,
-                                  startingDayOfWeek: StartingDayOfWeek.monday,
-                                  headerVisible: false,
-                                  selectedDayPredicate: (d) => isSameDay(_selectedDay, d),
-                                  onDaySelected: (s, f) => setState(() {
-                                    _selectedDay = s;
-                                    _focusedDay = f;
-                                  }),
-                                  onPageChanged: (f) => setState(() => _focusedDay = f),
-                                  eventLoader: _getEventsForDay,
-                                  enabledDayPredicate: _showWorkWeek
-                                      ? (d) => d.weekday != DateTime.saturday && d.weekday != DateTime.sunday
-                                      : null,
-                                  calendarStyle: CalendarStyle(
-                                    outsideDaysVisible: false,
-                                    weekendTextStyle: TextStyle(
-                                      color: _showWorkWeek ? Colors.grey[400] : Colors.red,
+                                    const SizedBox(height: 12),
+                                    Row(
+                                      children: [
+                                        const Text('Work Week'),
+                                        Switch(
+                                          value: _showWorkWeek,
+                                          onChanged: (v) => setState(() => _showWorkWeek = v),
+                                          activeColor: Colors.red,
+                                        ),
+                                      ],
                                     ),
-                                    disabledTextStyle: TextStyle(color: Colors.grey[400]),
-                                  ),
-                                  calendarBuilders: CalendarBuilders(
-                                    markerBuilder: (c, day, ev) {
-                                      if (ev.isEmpty) return null;
-                                      return Row(
-                                        mainAxisAlignment: MainAxisAlignment.center,
-                                        children: ev.take(3).map((e) {
-                                          final req = e as Map<String, dynamic>;
-                                          final approved = req['approved'] == true;
-                                          final denied = req['approved'] == null;
-                                          return Container(
-                                            margin: const EdgeInsets.symmetric(horizontal: 1),
-                                            width: 6,
-                                            height: 6,
-                                            decoration: BoxDecoration(
-                                              shape: BoxShape.circle,
-                                              color: approved ? Colors.green : denied ? Colors.red : Colors.orange,
-                                            ),
-                                          );
-                                        }).toList(),
-                                      );
-                                    },
-                                  ),
-                                ),
+                                    const SizedBox(height: 16),
+                                    const Divider(height: 1),
+                                    const SizedBox(height: 16),
 
-                                const SizedBox(height: 32),
-
-                                // 
-                                const Text('New Leave Request',
-                                    style: TextStyle(fontSize: 18, fontWeight: FontWeight.bold)),
-                                const SizedBox(height: 16),
-                                TextField(
-                                  controller: _startDateController,
-                                  decoration: const InputDecoration(
-                                    labelText: 'Start Date',
-                                    border: OutlineInputBorder(),
-                                    suffixIcon: Icon(Icons.calendar_today),
-                                  ),
-                                  readOnly: true,
-                                  onTap: () => _pickDate(_startDateController),
-                                ),
-                                const SizedBox(height: 12),
-                                TextField(
-                                  controller: _endDateController,
-                                  decoration: const InputDecoration(
-                                    labelText: 'End Date',
-                                    border: OutlineInputBorder(),
-                                    suffixIcon: Icon(Icons.calendar_today),
-                                  ),
-                                  readOnly: true,
-                                  onTap: () => _pickDate(_endDateController),
-                                ),
-                                const SizedBox(height: 12),
-                                TextField(
-                                  controller: _reasonController,
-                                  decoration: const InputDecoration(
-                                    labelText: 'Reason',
-                                    border: OutlineInputBorder(),
-                                  ),
-                                  maxLines: 3,
-                                ),
-                                const SizedBox(height: 16),
-                                SizedBox(
-                                  width: double.infinity,
-                                  child: ElevatedButton(
-                                    onPressed: _isSubmitting ? null : _submitRequest,
-                                    style: ElevatedButton.styleFrom(
-                                      backgroundColor: Colors.red,
-                                      padding: const EdgeInsets.symmetric(vertical: 16),
-                                      shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(12)),
-                                    ),
-                                    child: _isSubmitting
-                                        ? const CircularProgressIndicator(color: Colors.white)
-                                        : const Text('Submit',
-                                            style: TextStyle(fontSize: 16, color: Colors.white)),
-                                  ),
-                                ),
-
-                                const SizedBox(height: 32),
-
-                                // 
-                                Text('All Requests',
-                                    style: Theme.of(context).textTheme.titleLarge?.copyWith(fontWeight: FontWeight.bold)),
-                                const SizedBox(height: 12),
-                                _requests.isEmpty
-                                    ? const Text('No requests yet.')
-                                    : ListView.builder(
-                                        shrinkWrap: true,
-                                        physics: const NeverScrollableScrollPhysics(),
-                                        itemCount: _requests.length,
-                                        itemBuilder: (c, i) {
-                                          final req = _requests[i];
-                                          final start = DateTime.tryParse(req['start'] ?? '')
-                                              ?.toLocal()
-                                              .add(const Duration(days: 1));
-                                          final end = DateTime.tryParse(req['end_time'] ?? '')
-                                              ?.toLocal()
-                                              .add(const Duration(days: 1));
-                                          final status = req['approved'] == true
-                                              ? 'Approved'
-                                              : req['approved'] == false
-                                                  ? 'Pending'
-                                                  : 'Denied';
-                                          final days = req['days_count'] as int? ?? 0;
-                                          return Card(
-                                            margin: const EdgeInsets.symmetric(vertical: 6),
-                                            child: ListTile(
-                                              title: Text(_sanitizeInput(req['type'] ?? 'N/A')),
-                                              subtitle: Column(
-                                                crossAxisAlignment: CrossAxisAlignment.start,
-                                                children: [
-                                                  if (start != null)
-                                                    Text('Start: ${DateFormat('yyyy-MM-dd').format(start)}'),
-                                                  if (end != null)
-                                                    Text('End: ${DateFormat('yyyy-MM-dd').format(end)}'),
-                                                  Text('Status: $status'),
-                                                  Text('Days: $days'),
-                                                ],
-                                              ),
-                                              trailing: IconButton(
-                                                icon: const Icon(Icons.delete, color: Colors.red),
-                                                onPressed: () => _deleteRequest(req['id']),
-                                              ),
-                                            ),
+                                    // TableCalendar
+                                    TableCalendar(
+                                      firstDay: DateTime.now().subtract(const Duration(days: 365)),
+                                      lastDay: DateTime.now().add(const Duration(days: 365)),
+                                      focusedDay: _focusedDay,
+                                      calendarFormat: _calendarFormat,
+                                      startingDayOfWeek: StartingDayOfWeek.monday,
+                                      headerVisible: false,
+                                      selectedDayPredicate: (d) => isSameDay(_selectedDay, d),
+                                      onDaySelected: (s, f) => setState(() {
+                                        _selectedDay = s;
+                                        _focusedDay = f;
+                                      }),
+                                      onPageChanged: (f) => setState(() => _focusedDay = f),
+                                      eventLoader: _getEventsForDay,
+                                      enabledDayPredicate: _showWorkWeek
+                                          ? (d) => d.weekday != DateTime.saturday && d.weekday != DateTime.sunday
+                                          : null,
+                                      calendarStyle: CalendarStyle(
+                                        outsideDaysVisible: false,
+                                        weekendTextStyle: TextStyle(
+                                          color: _showWorkWeek ? Colors.grey[400] : Colors.red,
+                                        ),
+                                        disabledTextStyle: TextStyle(color: Colors.grey[400]),
+                                      ),
+                                      calendarBuilders: CalendarBuilders(
+                                        markerBuilder: (c, day, ev) {
+                                          if (ev.isEmpty) return null;
+                                          return Row(
+                                            mainAxisAlignment: MainAxisAlignment.center,
+                                            children: ev.take(3).map((e) {
+                                              final req = e as Map<String, dynamic>;
+                                              final approved = req['approved'] == true;
+                                              final denied = req['approved'] == null;
+                                              return Container(
+                                                margin: const EdgeInsets.symmetric(horizontal: 1),
+                                                width: 6,
+                                                height: 6,
+                                                decoration: BoxDecoration(
+                                                  shape: BoxShape.circle,
+                                                  color: approved ? Colors.green : denied ? Colors.red : Colors.orange,
+                                                ),
+                                              );
+                                            }).toList(),
                                           );
                                         },
                                       ),
-                                const SizedBox(height: 32),
-                              ],
-                            ),
+                                    ),
+
+                                    const SizedBox(height: 32),
+
+                                    // 新增请假表单
+                                    const Text('New Leave Request',
+                                        style: TextStyle(fontSize: 18, fontWeight: FontWeight.bold)),
+                                    const SizedBox(height: 16),
+                                    TextField(
+                                      controller: _startDateController,
+                                      decoration: const InputDecoration(
+                                        labelText: 'Start Date',
+                                        border: OutlineInputBorder(),
+                                        suffixIcon: Icon(Icons.calendar_today),
+                                      ),
+                                      readOnly: true,
+                                      onTap: () => _pickDate(_startDateController),
+                                    ),
+                                    const SizedBox(height: 12),
+                                    TextField(
+                                      controller: _endDateController,
+                                      decoration: const InputDecoration(
+                                        labelText: 'End Date',
+                                        border: OutlineInputBorder(),
+                                        suffixIcon: Icon(Icons.calendar_today),
+                                      ),
+                                      readOnly: true,
+                                      onTap: () => _pickDate(_endDateController),
+                                    ),
+                                    const SizedBox(height: 12),
+                                    TextField(
+                                      controller: _reasonController,
+                                      decoration: const InputDecoration(
+                                        labelText: 'Reason',
+                                        border: OutlineInputBorder(),
+                                      ),
+                                      maxLines: 3,
+                                    ),
+                                    const SizedBox(height: 16),
+                                    SizedBox(
+                                      width: double.infinity,
+                                      child: ElevatedButton(
+                                        onPressed: _isSubmitting ? null : _submitRequest,
+                                        style: ElevatedButton.styleFrom(
+                                          backgroundColor: Colors.red,
+                                          padding: const EdgeInsets.symmetric(vertical: 16),
+                                          shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(12)),
+                                        ),
+                                        child: _isSubmitting
+                                            ? const CircularProgressIndicator(color: Colors.white)
+                                            : const Text('Submit', style: TextStyle(fontSize: 16, color: Colors.white)),
+                                      ),
+                                    ),
+
+                                    const SizedBox(height: 32),
+
+                                    // 所有请求
+                                    Text('All Requests',
+                                        style: Theme.of(context).textTheme.titleLarge?.copyWith(fontWeight: FontWeight.bold)),
+                                    const SizedBox(height: 12),
+                                    _requests.isEmpty
+                                        ? const Text('No requests yet.')
+                                        : ListView.builder(
+                                            shrinkWrap: true,
+                                            physics: const NeverScrollableScrollPhysics(),
+                                            itemCount: _requests.length,
+                                            itemBuilder: (c, i) {
+                                              final req = _requests[i];
+                                              final start = DateTime.tryParse(req['start'] ?? '')
+                                                  ?.toLocal()
+                                                  .add(const Duration(days: 1));
+                                              final end = DateTime.tryParse(req['end_time'] ?? '')
+                                                  ?.toLocal()
+                                                  .add(const Duration(days: 1));
+                                              final status = req['approved'] == true
+                                                  ? 'Approved'
+                                                  : req['approved'] == false
+                                                      ? 'Pending'
+                                                      : 'Denied';
+                                              final days = req['days_count'] as int? ?? 0;
+                                              return Card(
+                                                margin: const EdgeInsets.symmetric(vertical: 6),
+                                                child: ListTile(
+                                                  title: Text(_sanitizeInput(req['type'] ?? 'N/A')),
+                                                  subtitle: Column(
+                                                    crossAxisAlignment: CrossAxisAlignment.start,
+                                                    children: [
+                                                      if (start != null)
+                                                        Text('Start: ${DateFormat('yyyy-MM-dd').format(start)}'),
+                                                      if (end != null)
+                                                        Text('End: ${DateFormat('yyyy-MM-dd').format(end)}'),
+                                                      Text('Status: $status'),
+                                                      Text('Days: $days'),
+                                                    ],
+                                                  ),
+                                                  trailing: IconButton(
+                                                    icon: const Icon(Icons.delete, color: Colors.red),
+                                                    onPressed: () => _deleteRequest(req['id']),
+                                                  ),
+                                                ),
+                                              );
+                                            },
+                                          ),
+                                    const SizedBox(height: 32),
+                                  ],
+                                ),
+                              ),
+                            ],
                           ),
-                        ],
-                      ),
-                    ),
+                        ),
+                ),
+              ],
             ),
 
-            // 
-            const Padding(
-              padding: EdgeInsets.only(bottom: 24),
-              child: Center(child: Navbar()),
+            // ==================== 浮动 Navbar 层（样式 100% 不变）================
+            Padding(
+              padding: EdgeInsets.symmetric(horizontal: 24),
+              child: Align(
+                alignment: Alignment.bottomCenter,
+                child: Container(
+                  margin: EdgeInsets.only(bottom: 16),
+                  padding: EdgeInsets.symmetric(vertical: 8, horizontal: 12),
+                  child: Navbar(),
+                ),
+              ),
             ),
           ],
         ),
