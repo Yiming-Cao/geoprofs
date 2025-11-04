@@ -309,50 +309,69 @@ class _DashboardState extends State<Dashboard> {
   }
 
   Future<void> _deleteRequest(dynamic requestId) async {
-    if (_lastDeleteTime != null &&
-        DateTime.now().difference(_lastDeleteTime!) < _rateLimitDuration) {
-      _showSnackBar('Please wait before deleting again.', isError: true);
-      return;
-    }
-    _lastDeleteTime = DateTime.now();
+  if (_lastDeleteTime != null &&
+      DateTime.now().difference(_lastDeleteTime!) < _rateLimitDuration) {
+    _showSnackBar('Please wait before deleting again.', isError: true);
+    return;
+  }
+  _lastDeleteTime = DateTime.now();
 
-    final confirm = await showDialog<bool>(
-      context: context,
-      builder: (_) => AlertDialog(
-        title: const Text('Delete Request'),
-        content: const Text('This cannot be undone. Proceed?'),
-        actions: [
-          TextButton(onPressed: () => Navigator.pop(context, false), child: const Text('Cancel')),
-          TextButton(onPressed: () => Navigator.pop(context, true), child: const Text('Delete', style: TextStyle(color: Colors.red))),
-        ],
-      ),
-    );
-    if (confirm != true) return;
+  final confirm = await showDialog<bool>(
+    context: context,
+    builder: (_) => AlertDialog(
+      title: const Text('Delete Request'),
+      content: const Text('This cannot be undone. Proceed?'),
+      actions: [
+        TextButton(onPressed: () => Navigator.pop(context, false), child: const Text('Cancel')),
+        TextButton(
+          onPressed: () => Navigator.pop(context, true),
+          child: const Text('Delete', style: TextStyle(color: Colors.red)),
+        ),
+      ],
+    ),
+  );
+  if (confirm != true) return;
 
-    try {
-      final id = requestId is int ? requestId : (requestId is String ? int.tryParse(requestId) : null);
-      if (id == null) throw 'Invalid ID';
+  try {
+    final id = requestId is int
+        ? requestId
+        : (requestId is String ? int.tryParse(requestId) : null);
+    if (id == null) throw 'Invalid request ID';
 
-      final req = _requests.firstWhere((r) => r['id'] == id);
-      final wasApproved = req['approved'] == true;
-      final days = req['days_count'] as int;
-      final userId = req['user_id'];
+    final req = _requests.firstWhere((r) => r['id'] == id, orElse: () => throw 'Request not found');
+    final wasApproved = req['approved'] == true;
+    final days = (req['days_count'] as num?)?.toInt() ?? 0;
+    final userId = req['user_id'] as String?;
 
-      await supabase.from('verlof').delete().eq('id', id);
+    if (userId == null) throw 'Missing user ID';
 
-      if (wasApproved) {
+    // Delete the request
+    await supabase.from('verlof').delete().eq('id', id);
+
+    // Only decrement leave balance if it was approved
+    if (wasApproved && days > 0) {
+      try {
         await supabase.rpc('decrement_leave_used', params: {
           'p_user_id': userId,
           'p_days': days,
         });
+      } catch (rpcError) {
+        print('RPC decrement failed: $rpcError');
+        // Optionally re-fetch balance to stay in sync
+        if (userId == supabase.auth.currentUser?.id) {
+          await _fetchLeaveBalance();
+        }
+        _showSnackBar('Warning: Leave balance may be out of sync.', isError: true);
       }
+    }
 
-      _showSnackBar('Request deleted successfully.');
-      await _fetchRequests();
+    _showSnackBar('Request deleted successfully.');
+    await _fetchRequests();
       if (userId == supabase.auth.currentUser?.id) {
         await _fetchLeaveBalance();
       }
     } catch (e) {
+      print('Delete error: $e');
       _showSnackBar('Failed to delete request: $e', isError: true);
     }
   }
