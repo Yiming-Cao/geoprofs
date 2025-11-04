@@ -334,7 +334,7 @@ class _MobileLayoutState extends State<MobileLayout> {
                   ? const Center(child: CircularProgressIndicator())
                   : SingleChildScrollView(
                       padding: const EdgeInsets.only(
-                          top: 12, left: 16, right: 16, bottom: 120),
+                          top: 0, left: 16, right: 16, bottom: 120),
                       child: Column(
                         crossAxisAlignment: CrossAxisAlignment.start,
                         children: [

@@ -11,7 +11,7 @@ class HeaderBar extends StatelessWidget {
   Widget build(BuildContext context) {
     return SafeArea(
       child: Padding(
-        padding: const EdgeInsets.symmetric(vertical: 12, horizontal: 12),
+        padding: const EdgeInsets.fromLTRB(12, 12, 12, 0),
         child: Stack(
           children: [
             // 居中的 Logo
