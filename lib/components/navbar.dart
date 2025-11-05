@@ -29,7 +29,7 @@ class _NavbarState extends State<Navbar> {
   String? _getRouteForIndex(int index) {
     switch (index) {
       case 0:
-        return '/dashboard';
+        return '/verlof';
       case 1:
         return _isLoggedIn ? '/profile' : '/login'; // MAGIC LINE
       case 2:
