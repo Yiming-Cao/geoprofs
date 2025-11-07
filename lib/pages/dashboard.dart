@@ -20,24 +20,18 @@ class _DashboardState extends State<Dashboard> {
   bool _isSubmitting = false;
   String? _error;
   int _remainingLeaveDays = 28;
-
   final _startDateController = TextEditingController();
   final _endDateController = TextEditingController();
   final _reasonController = TextEditingController();
-
   CalendarFormat _calendarFormat = CalendarFormat.month;
   DateTime _focusedDay = DateTime.now();
   DateTime? _selectedDay;
   Map<DateTime, List<Map<String, dynamic>>> _events = {};
   bool _showWorkWeek = false;
-
   DateTime? _lastSubmitTime;
   DateTime? _lastDeleteTime;
   static const _rateLimitDuration = Duration(seconds: 5);
-
   bool _isManager = false;
-
-  // === QUICK TYPE DROPDOWN ===
   String? _selectedVerlofType;
   final List<String> _verlofTypes = ['sick', 'holiday', 'personal'];
 
@@ -227,37 +221,31 @@ class _DashboardState extends State<Dashboard> {
     }
     setState(() => _isSubmitting = true);
     _lastSubmitTime = DateTime.now();
-
     if (!await _validateSession()) {
       _showSnackBar('Session expired. Please log in again.', isError: true);
       setState(() => _isSubmitting = false);
       return;
     }
-
     final userId = supabase.auth.currentUser?.id;
     if (userId == null) {
       _showSnackBar('Not logged in.', isError: true);
       setState(() => _isSubmitting = false);
       return;
     }
-
     final startTxt = _startDateController.text.trim();
     final endTxt = _endDateController.text.trim();
     final customReason = _reasonController.text.trim();
     final quickType = _selectedVerlofType;
-
     if (startTxt.isEmpty || endTxt.isEmpty) {
       _showSnackBar('Please select start and end date.', isError: true);
       setState(() => _isSubmitting = false);
       return;
     }
-
     if (quickType == null && customReason.isEmpty) {
       _showSnackBar('Please select a type or enter a reason.', isError: true);
       setState(() => _isSubmitting = false);
       return;
     }
-
     final startDt = DateTime.parse(startTxt);
     final endDt = DateTime.parse(endTxt);
     if (endDt.isBefore(startDt)) {
@@ -265,7 +253,6 @@ class _DashboardState extends State<Dashboard> {
       setState(() => _isSubmitting = false);
       return;
     }
-
     final daysRequested = _calculateWorkdays(startDt, endDt);
     if (daysRequested > _remainingLeaveDays) {
       _showSnackBar(
@@ -274,13 +261,10 @@ class _DashboardState extends State<Dashboard> {
       setState(() => _isSubmitting = false);
       return;
     }
-
     final startUtc =
         DateTime(startDt.year, startDt.month, startDt.day).toUtc().toIso8601String();
     final endUtc =
         DateTime(endDt.year, endDt.month, endDt.day).toUtc().toIso8601String();
-
-    // Smart reason logic
     final String reasonText = customReason.isNotEmpty
         ? customReason
         : (quickType == 'personal' ? 'Personal reason' : quickType!);
@@ -289,13 +273,12 @@ class _DashboardState extends State<Dashboard> {
       await supabase.from('verlof').insert({
         'start': startUtc,
         'end_time': endUtc,
-        'reason': reasonText,         // ← NOW 'reason'
-        'verlof_type': quickType,     // ← Quick type
-        'approved': false,
+        'reason': reasonText,
+        'verlof_type': quickType,
+        'verlof_state': 'pending',  // ← FIXED: Always 'pending'
         'user_id': userId,
         'days_count': daysRequested,
       }).select();
-
       _showSnackBar('Request submitted successfully!');
       _clearForm();
       setState(() => _selectedVerlofType = null);
@@ -309,64 +292,51 @@ class _DashboardState extends State<Dashboard> {
   }
 
   Future<void> _deleteRequest(dynamic requestId) async {
-  if (_lastDeleteTime != null &&
-      DateTime.now().difference(_lastDeleteTime!) < _rateLimitDuration) {
-    _showSnackBar('Please wait before deleting again.', isError: true);
-    return;
-  }
-  _lastDeleteTime = DateTime.now();
-
-  final confirm = await showDialog<bool>(
-    context: context,
-    builder: (_) => AlertDialog(
-      title: const Text('Delete Request'),
-      content: const Text('This cannot be undone. Proceed?'),
-      actions: [
-        TextButton(onPressed: () => Navigator.pop(context, false), child: const Text('Cancel')),
-        TextButton(
-          onPressed: () => Navigator.pop(context, true),
-          child: const Text('Delete', style: TextStyle(color: Colors.red)),
-        ),
-      ],
-    ),
-  );
-  if (confirm != true) return;
-
-  try {
-    final id = requestId is int
-        ? requestId
-        : (requestId is String ? int.tryParse(requestId) : null);
-    if (id == null) throw 'Invalid request ID';
-
-    final req = _requests.firstWhere((r) => r['id'] == id, orElse: () => throw 'Request not found');
-    final wasApproved = req['approved'] == true;
-    final days = (req['days_count'] as num?)?.toInt() ?? 0;
-    final userId = req['user_id'] as String?;
-
-    if (userId == null) throw 'Missing user ID';
-
-    // Delete the request
-    await supabase.from('verlof').delete().eq('id', id);
-
-    // Only decrement leave balance if it was approved
-    if (wasApproved && days > 0) {
-      try {
-        await supabase.rpc('decrement_leave_used', params: {
-          'p_user_id': userId,
-          'p_days': days,
-        });
-      } catch (rpcError) {
-        print('RPC decrement failed: $rpcError');
-        // Optionally re-fetch balance to stay in sync
-        if (userId == supabase.auth.currentUser?.id) {
-          await _fetchLeaveBalance();
-        }
-        _showSnackBar('Warning: Leave balance may be out of sync.', isError: true);
-      }
+    if (_lastDeleteTime != null &&
+        DateTime.now().difference(_lastDeleteTime!) < _rateLimitDuration) {
+      _showSnackBar('Please wait before deleting again.', isError: true);
+      return;
     }
-
-    _showSnackBar('Request deleted successfully.');
-    await _fetchRequests();
+    _lastDeleteTime = DateTime.now();
+    final confirm = await showDialog<bool>(
+      context: context,
+      builder: (_) => AlertDialog(
+        title: const Text('Delete Request'),
+        content: const Text('This cannot be undone. Proceed?'),
+        actions: [
+          TextButton(onPressed: () => Navigator.pop(context, false), child: const Text('Cancel')),
+          TextButton(onPressed: () => Navigator.pop(context, true), child: const Text('Delete', style: TextStyle(color: Colors.red))),
+        ],
+      ),
+    );
+    if (confirm != true) return;
+    try {
+      final id = requestId is int
+          ? requestId
+          : (requestId is String ? int.tryParse(requestId) : null);
+      if (id == null) throw 'Invalid request ID';
+      final req = _requests.firstWhere((r) => r['id'] == id, orElse: () => throw 'Request not found');
+      final wasApproved = req['verlof_state'] == 'approved';
+      final days = (req['days_count'] as num?)?.toInt() ?? 0;
+      final userId = req['user_id'] as String?;
+      if (userId == null) throw 'Missing user ID';
+      await supabase.from('verlof').delete().eq('id', id);
+      if (wasApproved && days > 0) {
+        try {
+          await supabase.rpc('decrement_leave_used', params: {
+            'p_user_id': userId,
+            'p_days': days,
+          });
+        } catch (rpcError) {
+          print('RPC decrement failed: $rpcError');
+          if (userId == supabase.auth.currentUser?.id) {
+            await _fetchLeaveBalance();
+          }
+          _showSnackBar('Warning: Leave balance may be out of sync.', isError: true);
+        }
+      }
+      _showSnackBar('Request deleted successfully.');
+      await _fetchRequests();
       if (userId == supabase.auth.currentUser?.id) {
         await _fetchLeaveBalance();
       }
@@ -376,24 +346,30 @@ class _DashboardState extends State<Dashboard> {
     }
   }
 
-  Future<void> _updateRequestStatus(int id, bool? approved) async {
+  Future<void> _updateRequestStatus(int id, String state) async {
     try {
       final req = _requests.firstWhere((r) => r['id'] == id);
       final userId = req['user_id'];
       final days = req['days_count'] as int;
 
-      await supabase.from('verlof').update({'approved': approved}).eq('id', id);
+      final newState = state == 'approve' ? 'approved'
+                     : state == 'deny'   ? 'denied'
+                     : state;
 
-      if (approved == true) {
+      await supabase
+          .from('verlof')
+          .update({'verlof_state': newState})  // ← use the corrected value
+          .eq('id', id);
+
+      if (newState == 'approved') {
         await supabase.rpc('increment_leave_used', params: {
           'p_user_id': userId,
           'p_days': days,
         });
       }
 
-      final status = approved == true ? 'approved' : approved == false ? 'set to pending' : 'denied';
-      _showSnackBar('Request $status.');
-
+      _showSnackBar('Request ${newState == 'approved' ? 'approved' : newState == 'denied' ? 'denied' : 'set to pending'}.');
+      
       await _fetchRequests();
       if (userId == supabase.auth.currentUser?.id) {
         await _fetchLeaveBalance();
@@ -439,11 +415,9 @@ class _DashboardState extends State<Dashboard> {
     return _events[key] ?? [];
   }
 
-  // === DISPLAY TITLE LOGIC ===
   String _getDisplayTitle(Map<String, dynamic> req) {
     final verlofType = req['verlof_type'] as String?;
     final reasonText = req['reason'] as String?;
-
     if (verlofType != null) {
       final capitalized = verlofType[0].toUpperCase() + verlofType.substring(1);
       return reasonText != null && reasonText.toLowerCase() != verlofType
@@ -480,7 +454,7 @@ class _DashboardState extends State<Dashboard> {
                                 ),
                                 padding: const EdgeInsets.all(12),
                                 child: TableCalendar(
-                                  firstDay: DateTime.now().subtract(const Duration(days: 365)),
+                                  firstDay: DateTime.now(),
                                   lastDay: DateTime.now().add(const Duration(days: 365)),
                                   focusedDay: _focusedDay,
                                   calendarFormat: CalendarFormat.month,
@@ -517,8 +491,9 @@ class _DashboardState extends State<Dashboard> {
                                         mainAxisAlignment: MainAxisAlignment.center,
                                         children: ev.take(3).map((e) {
                                           final req = e as Map<String, dynamic>;
-                                          final approved = req['approved'] == true;
-                                          final denied = req['approved'] == null;
+                                          final state = req['verlof_state'] as String?;
+                                          final approved = state == 'approved';
+                                          final denied = state == 'denied';
                                           return Container(
                                             margin: const EdgeInsets.symmetric(horizontal: 1),
                                             width: 5,
@@ -543,11 +518,12 @@ class _DashboardState extends State<Dashboard> {
                                             .map((e) {
                                               final start = DateTime.tryParse(e['start'] ?? '')?.toLocal();
                                               final end = DateTime.tryParse(e['end_time'] ?? '')?.toLocal();
-                                              final status = e['approved'] == true
+                                              final state = e['verlof_state'] as String?;
+                                              final status = state == 'approved'
                                                   ? 'Approved'
-                                                  : e['approved'] == false
-                                                      ? 'Pending'
-                                                      : 'Denied';
+                                                  : state == 'denied'
+                                                      ? 'Denied'
+                                                      : 'Pending';
                                               final title = _getDisplayTitle(e);
                                               return '$title\n${start != null ? DateFormat('MMM dd').format(start) : ''} - ${end != null ? DateFormat('MMM dd').format(end) : ''}\nStatus: $status';
                                             })
@@ -656,7 +632,7 @@ class _DashboardState extends State<Dashboard> {
                                 const Divider(height: 1, thickness: 1),
                                 const SizedBox(height: 16),
                                 TableCalendar(
-                                  firstDay: DateTime.now().subtract(const Duration(days: 365)),
+                                  firstDay: DateTime.now(),
                                   lastDay: DateTime.now().add(const Duration(days: 365)),
                                   focusedDay: _focusedDay,
                                   calendarFormat: _calendarFormat,
@@ -675,8 +651,7 @@ class _DashboardState extends State<Dashboard> {
                                   calendarStyle: CalendarStyle(
                                     outsideDaysVisible: false,
                                     weekendTextStyle: TextStyle(
-                                      color: _showWorkWeek ? Colors.grey[400] : Colors.red,
-                                    ),
+                                        color: _showWorkWeek ? Colors.grey[400] : Colors.red),
                                     disabledTextStyle: TextStyle(color: Colors.grey[400]),
                                   ),
                                   calendarBuilders: CalendarBuilders(
@@ -686,8 +661,9 @@ class _DashboardState extends State<Dashboard> {
                                         mainAxisAlignment: MainAxisAlignment.center,
                                         children: ev.take(3).map((e) {
                                           final req = e as Map<String, dynamic>;
-                                          final approved = req['approved'] == true;
-                                          final denied = req['approved'] == null;
+                                          final state = req['verlof_state'] as String?;
+                                          final approved = state == 'approved';
+                                          final denied = state == 'denied';
                                           return Container(
                                             margin: const EdgeInsets.symmetric(horizontal: 1),
                                             width: 6,
@@ -712,8 +688,6 @@ class _DashboardState extends State<Dashboard> {
                                   style: const TextStyle(fontSize: 18, fontWeight: FontWeight.bold),
                                 ),
                                 const SizedBox(height: 16),
-
-                                // === NEW FORM: QUICK TYPE + CUSTOM REASON ===
                                 if (!_isManager) ...[
                                   DropdownButtonFormField<String>(
                                     value: _selectedVerlofType,
@@ -774,8 +748,7 @@ class _DashboardState extends State<Dashboard> {
                                         backgroundColor: Colors.red,
                                         padding: const EdgeInsets.symmetric(vertical: 16),
                                         shape: RoundedRectangleBorder(
-                                          borderRadius: BorderRadius.circular(12),
-                                        ),
+                                            borderRadius: BorderRadius.circular(12)),
                                       ),
                                       child: _isSubmitting
                                           ? const CircularProgressIndicator(color: Colors.white)
@@ -784,7 +757,6 @@ class _DashboardState extends State<Dashboard> {
                                   ),
                                   const SizedBox(height: 32),
                                 ],
-
                                 Text(
                                   _isManager ? 'Team Requests' : 'My Requests',
                                   style: Theme.of(context).textTheme.titleLarge?.copyWith(fontWeight: FontWeight.bold),
@@ -800,14 +772,14 @@ class _DashboardState extends State<Dashboard> {
                                           final req = _requests[i];
                                           final start = DateTime.tryParse(req['start'] ?? '')?.toLocal();
                                           final end = DateTime.tryParse(req['end_time'] ?? '')?.toLocal();
-                                          final status = req['approved'] == true
+                                          final state = req['verlof_state'] as String?;
+                                          final status = state == 'approved'
                                               ? 'Approved'
-                                              : req['approved'] == false
-                                                  ? 'Pending'
-                                                  : 'Denied';
+                                              : state == 'denied'
+                                                  ? 'Denied'
+                                                  : 'Pending';
                                           final days = req['days_count'] as int? ?? 0;
                                           final isOwn = req['user_id'] == supabase.auth.currentUser?.id;
-
                                           return Card(
                                             margin: const EdgeInsets.symmetric(vertical: 6),
                                             child: ListTile(
@@ -828,22 +800,22 @@ class _DashboardState extends State<Dashboard> {
                                                 mainAxisSize: MainAxisSize.min,
                                                 children: [
                                                   if (_isManager) ...[
-                                                    if (req['approved'] != true)
+                                                    if (state != 'approved')
                                                       IconButton(
                                                         icon: const Icon(Icons.check, color: Colors.green),
-                                                        onPressed: () => _updateRequestStatus(req['id'], true),
+                                                        onPressed: () => _updateRequestStatus(req['id'], 'approved'), // ← was correct
                                                         tooltip: 'Approve',
                                                       ),
-                                                    if (req['approved'] != false)
+                                                    if (state != 'pending')
                                                       IconButton(
                                                         icon: const Icon(Icons.hourglass_empty, color: Colors.orange),
-                                                        onPressed: () => _updateRequestStatus(req['id'], false),
+                                                        onPressed: () => _updateRequestStatus(req['id'], 'pending'), // ← was correct
                                                         tooltip: 'Pending',
                                                       ),
-                                                    if (req['approved'] != null)
+                                                    if (state != 'denied')
                                                       IconButton(
                                                         icon: const Icon(Icons.close, color: Colors.red),
-                                                        onPressed: () => _updateRequestStatus(req['id'], null),
+                                                        onPressed: () => _updateRequestStatus(req['id'], 'denied'), // ← was correct
                                                         tooltip: 'Deny',
                                                       ),
                                                   ],
@@ -867,11 +839,10 @@ class _DashboardState extends State<Dashboard> {
                     ),
                   ),
             Positioned(
-              bottom: 24,
-              left: 0,
-              right: 0,
-              child: Center(child: Navbar()),
-            ),
+                bottom: 24,
+                left: 0,
+                right: 0,
+                child: Center(child: Navbar())),
           ],
         ),
       ),
