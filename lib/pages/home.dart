@@ -90,26 +90,26 @@ class _HomePageState extends State<HomePage> {
                   ),
                   // Admin 按钮区域，与卡片分开
                   const SizedBox(height: 20), // 调整这个高度可以改变按钮与卡片的距离
-                  if (_checkingAdmin)
-                    const SizedBox(height: 24, width: 24, child: CircularProgressIndicator())
-                  else if (_isAdmin)
-                    Card(
-                      elevation: 2.0,
-                      shape: RoundedRectangleBorder(
-                        borderRadius: BorderRadius.circular(8.0),
-                      ),
-                      child: Padding(
-                        padding: const EdgeInsets.all(8.0),
-                        child: ElevatedButton.icon(
-                          icon: const Icon(Icons.admin_panel_settings),
-                          label: const Text('Admin Panel'),
-                          style: ElevatedButton.styleFrom(
-                            padding: const EdgeInsets.symmetric(horizontal: 24, vertical: 12),
-                          ),
-                          onPressed: () => Navigator.pushNamed(context, '/admin'),
-                        ),
-                      ),
-                    ),
+                  // if (_checkingAdmin)
+                  //   const SizedBox(height: 24, width: 24, child: CircularProgressIndicator())
+                  // else if (_isAdmin)
+                  //   Card(
+                  //     elevation: 2.0,
+                  //     shape: RoundedRectangleBorder(
+                  //       borderRadius: BorderRadius.circular(8.0),
+                  //     ),
+                  //     child: Padding(
+                  //       padding: const EdgeInsets.all(8.0),
+                  //       child: ElevatedButton.icon(
+                  //         icon: const Icon(Icons.admin_panel_settings),
+                  //         label: const Text('Admin Panel'),
+                  //         style: ElevatedButton.styleFrom(
+                  //           padding: const EdgeInsets.symmetric(horizontal: 24, vertical: 12),
+                  //         ),
+                  //         onPressed: () => Navigator.pushNamed(context, '/admin'),
+                  //       ),
+                  //     ),
+                  //   ),
                 ],
               ),
             ),
