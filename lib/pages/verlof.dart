@@ -684,31 +684,22 @@ class _MobileLayoutState extends State<MobileLayout> {
                                                   trailing: Row(
                                                     mainAxisSize: MainAxisSize.min,
                                                     children: [
-                                                      if (_isManager) ...[
+                                                      // Manager actions: only on OTHER people's requests
+                                                      if (_isManager && !isOwn) ...[
                                                         if (state != 'approved')
-                                                          IconButton(
-                                                            icon: const Icon(Icons.check, color: Colors.green),
-                                                            onPressed: () => _updateRequestStatus(req['id'], 'approved'),
-                                                            tooltip: 'Approve',
-                                                          ),
+                                                          IconButton(icon: const Icon(Icons.check, color: Colors.green),   onPressed: () => _updateRequestStatus(req['id'], 'approved'), tooltip: 'Approve'),
                                                         if (state != 'pending')
-                                                          IconButton(
-                                                            icon: const Icon(Icons.hourglass_empty, color: Colors.orange),
-                                                            onPressed: () => _updateRequestStatus(req['id'], 'pending'),
-                                                            tooltip: 'Pending',
-                                                          ),
+                                                          IconButton(icon: const Icon(Icons.hourglass_empty, color: Colors.orange), onPressed: () => _updateRequestStatus(req['id'], 'pending'), tooltip: 'Set Pending'),
                                                         if (state != 'denied')
-                                                          IconButton(
-                                                            icon: const Icon(Icons.close, color: Colors.red),
-                                                            onPressed: () => _updateRequestStatus(req['id'], 'denied'),
-                                                            tooltip: 'Deny',
-                                                          ),
+                                                          IconButton(icon: const Icon(Icons.close, color: Colors.red),    onPressed: () => _updateRequestStatus(req['id'], 'denied'),   tooltip: 'Deny'),
                                                       ],
+                                                      // Delete: allowed on own request OR on others if manager
                                                       if (isOwn || _isManager)
                                                         IconButton(
                                                           icon: const Icon(Icons.delete, color: Colors.red),
                                                           onPressed: () => _deleteRequest(req['id']),
-                                                        ),
+                                                          tooltip: 'Delete',
+                                                      ),
                                                     ],
                                                   ),
                                                 ),
@@ -1436,7 +1427,6 @@ class _DesktopLayoutState extends State<DesktopLayout> {
                                   style: const TextStyle(fontSize: 18, fontWeight: FontWeight.bold),
                                 ),
                                 const SizedBox(height: 16),
-                                if (!_isManager) ...[
                                   DropdownButtonFormField<String>(
                                     value: _selectedVerlofType,
                                     decoration: const InputDecoration(
@@ -1504,7 +1494,6 @@ class _DesktopLayoutState extends State<DesktopLayout> {
                                     ),
                                   ),
                                   const SizedBox(height: 32),
-                                ],
                                 Text(
                                   _isManager ? 'Team Requests' : 'My Requests',
                                   style: Theme.of(context).textTheme.titleLarge?.copyWith(fontWeight: FontWeight.bold),
@@ -1547,31 +1536,22 @@ class _DesktopLayoutState extends State<DesktopLayout> {
                                               trailing: Row(
                                                 mainAxisSize: MainAxisSize.min,
                                                 children: [
-                                                  if (_isManager) ...[
+                                                  // Manager actions: only on OTHER people's requests
+                                                  if (_isManager && !isOwn) ...[
                                                     if (state != 'approved')
-                                                      IconButton(
-                                                        icon: const Icon(Icons.check, color: Colors.green),
-                                                        onPressed: () => _updateRequestStatus(req['id'], 'approved'),
-                                                        tooltip: 'Approve',
-                                                      ),
+                                                      IconButton(icon: const Icon(Icons.check, color: Colors.green),   onPressed: () => _updateRequestStatus(req['id'], 'approved'), tooltip: 'Approve'),
                                                     if (state != 'pending')
-                                                      IconButton(
-                                                        icon: const Icon(Icons.hourglass_empty, color: Colors.orange),
-                                                        onPressed: () => _updateRequestStatus(req['id'], 'pending'),
-                                                        tooltip: 'Pending',
-                                                      ),
+                                                      IconButton(icon: const Icon(Icons.hourglass_empty, color: Colors.orange), onPressed: () => _updateRequestStatus(req['id'], 'pending'), tooltip: 'Set Pending'),
                                                     if (state != 'denied')
-                                                      IconButton(
-                                                        icon: const Icon(Icons.close, color: Colors.red),
-                                                        onPressed: () => _updateRequestStatus(req['id'], 'denied'),
-                                                        tooltip: 'Deny',
-                                                      ),
+                                                      IconButton(icon: const Icon(Icons.close, color: Colors.red),    onPressed: () => _updateRequestStatus(req['id'], 'denied'),   tooltip: 'Deny'),
                                                   ],
+                                                  // Delete: allowed on own request OR on others if manager
                                                   if (isOwn || _isManager)
                                                     IconButton(
                                                       icon: const Icon(Icons.delete, color: Colors.red),
                                                       onPressed: () => _deleteRequest(req['id']),
-                                                    ),
+                                                      tooltip: 'Delete',
+                                                  ),
                                                 ],
                                               ),
                                             ),
@@ -1597,6 +1577,7 @@ class _DesktopLayoutState extends State<DesktopLayout> {
       ),
     );
   }
+
 
   @override
   void dispose() {
