@@ -46,7 +46,8 @@ class _MobileLayoutState extends State<MobileLayout> {
 
   List<Map<String, dynamic>> _leaveRequests = [];
   bool _loadingLeave = false;
-
+  bool _loadingRole = true;
+  String _userRole = 'worker';
   @override
   void initState() {
     super.initState();
@@ -54,7 +55,37 @@ class _MobileLayoutState extends State<MobileLayout> {
     _avatarUrl = user?.userMetadata?['avatar_url'] as String?;
     _loadTasks();
     _loadLeaveRequests();
+    _loadUserRole();
+    _loadTasks();
+    _loadLeaveRequests();
   }
+
+  Future<void> _loadUserRole() async {
+  final user = supabase.auth.currentUser;
+  if (user == null) {
+    setState(() => _loadingRole = false);
+    return;
+  }
+
+  try {
+    final response = await supabase
+        .from('permissions')
+        .select('role')
+        .eq('id', user.id)
+        .single();
+
+    setState(() {
+      _userRole = (response['role'] as String?)?.toLowerCase() ?? 'worker';
+      _loadingRole = false;
+    });
+  } catch (e) {
+    debugPrint('Kon rol niet ophalen: $e');
+    setState(() {
+      _userRole = 'worker';
+      _loadingRole = false;
+    });
+  }
+}
 
   // === 兼容不同版本的 Supabase 查询 ===
   Future<dynamic> _runQuery(dynamic builder) async {
@@ -614,6 +645,19 @@ class _MobileLayoutState extends State<MobileLayout> {
                                   children: [
                                     Text(displayName, style: const TextStyle(fontWeight: FontWeight.bold, fontSize: 16)),
                                     Text(email, style: const TextStyle(fontSize: 13, color: Colors.grey)),
+                                    if (!_loadingRole)
+                                      Text(
+                                        _userRole.toUpperCase(),
+                                        style: TextStyle(
+                                          fontSize: 12,
+                                          fontWeight: FontWeight.bold,
+                                          color: _userRole == 'admin' 
+                                              ? Colors.red 
+                                              : _userRole == 'office_manager' 
+                                                  ? Colors.purple 
+                                                  : Colors.blueGrey,
+                                        ),
+                                      ),
                                   ],
                                 ),
                               ),
@@ -706,14 +750,45 @@ class _DesktopLayoutState extends State<DesktopLayout> {
   List<Map<String, dynamic>> _leaveRequests = [];
   bool _loadingLeave = false;
 
+  bool _loadingRole = true;
+  String _userRole = 'worker';
+
   @override
   void initState() {
     super.initState();
     final user = supabase.auth.currentUser;
     _avatarUrl = user?.userMetadata?['avatar_url'] as String?;
     _loadTasks();
-    _loadLeaveRequests(); // load leave requests for sidebar test
+    _loadLeaveRequests(); 
+    _loadUserRole();
   }
+
+  Future<void> _loadUserRole() async {
+  final user = supabase.auth.currentUser;
+  if (user == null) {
+    setState(() => _loadingRole = false);
+    return;
+  }
+
+  try {
+    final response = await supabase
+        .from('permissions')
+        .select('role')
+        .eq('user_uuid', user.id)
+        .single();
+
+    setState(() {
+      _userRole = (response['role'] as String?)?.toLowerCase() ?? 'worker';
+      _loadingRole = false;
+    });
+  } catch (e) {
+    debugPrint('Kon rol niet ophalen: $e');
+    setState(() {
+      _userRole = 'worker';
+      _loadingRole = false;
+    });
+  }
+}
 
   // 兼容不同版本的 Postgrest/PostgrestFilterBuilder 的执行方法
   Future<dynamic> _runQuery(dynamic builder) async {
@@ -1369,6 +1444,19 @@ class _DesktopLayoutState extends State<DesktopLayout> {
                                     children: [
                                       Text(displayName, style: const TextStyle(fontWeight: FontWeight.bold, fontSize: 16)),
                                       Text(email, style: const TextStyle(fontSize: 13, color: Colors.grey, fontStyle: FontStyle.italic)),
+                                        if (!_loadingRole)
+                                              Text(
+                                                _userRole.toUpperCase(),
+                                                style: TextStyle(
+                                                  fontSize: 12,
+                                                  fontWeight: FontWeight.bold,
+                                                  color: _userRole == 'admin' 
+                                                      ? Colors.red 
+                                                      : _userRole == 'office_manager' 
+                                                          ? Colors.purple 
+                                                          : Colors.blueGrey,
+                                                ),
+                                              ),
                                     ],
                                   ),
                                   const SizedBox(width: 8),
