@@ -146,7 +146,7 @@ Widget build(BuildContext context) {
           return const Center(child: CircularProgressIndicator());
         }
         if (snapshot.hasError) {
-          return Center(child: Text('Fout bij laden van logs.'));
+          return Center(child: Text('Fout bij laden van logs: ${snapshot.error}'));
         }
         final logs = snapshot.data ?? [];
         if (logs.isEmpty) {
@@ -156,26 +156,22 @@ Widget build(BuildContext context) {
         return SingleChildScrollView(
           scrollDirection: Axis.horizontal, // tabel kan horizontaal scrollen
           child: DataTable(
-            columns: const [
-              DataColumn(label: Text("Actie")),
-              DataColumn(label: Text("Verandering")),
-              DataColumn(label: Text("Was")),
-              DataColumn(label: Text("User")),
-              DataColumn(label: Text("User_uuid")),
-              DataColumn(label: Text("Datum")),
-            ],
-            rows: logs.map((log) {
-              return DataRow(
-                cells: [
-                  DataCell(Text(log['action']?.toString() ?? '')),
-                  DataCell(Text(log['change']?.toString() ?? '')),
-                  DataCell(Text(log['was']?.toString() ?? '')),
-                  DataCell(Text(log['user_id']?.toString() ?? '')),
-                  DataCell(Text(log['user_uuid']?.toString() ?? '')),
-                  DataCell(Text(log['created_at']?.toString() ?? '')),
-                ],
-              );
-            }).toList(),
+          columns: const [
+            DataColumn(label: Text("Actie")),
+            DataColumn(label: Text("Verandering")),
+            DataColumn(label: Text("Was")),
+            DataColumn(label: Text("User email")),
+            DataColumn(label: Text("Datum")),
+          ],
+          rows: logs.map((log) {
+            return DataRow(cells: [
+              DataCell(Text(log['action'] ?? '')),
+              DataCell(Text(log['change'] ?? '')),
+              DataCell(Text(log['was'] ?? '')),
+              DataCell(Text(log['user_email'] ?? '')),
+              DataCell(Text(log['created_at']?.toString() ?? '')),
+            ]);
+          }).toList(),
           ),
         );
       },
