@@ -1,5 +1,4 @@
 import 'package:flutter/material.dart';
-import 'package:flutter/foundation.dart' show defaultTargetPlatform, TargetPlatform;
 import 'package:supabase_flutter/supabase_flutter.dart';
 import 'package:intl/intl.dart';
 import 'package:table_calendar/table_calendar.dart';
@@ -7,13 +6,14 @@ import 'package:geoprof/components/navbar.dart';
 import 'package:geoprof/components/background_container.dart';
 import 'package:geoprof/components/header_bar.dart';
 import 'package:jwt_decode/jwt_decode.dart';
+import 'package:flutter/foundation.dart' show defaultTargetPlatform, TargetPlatform;
 
-class Dashboard extends StatelessWidget {
-  const Dashboard({super.key});
+class VerlofPage extends StatelessWidget {
+  const VerlofPage({super.key});
 
   @override
   Widget build(BuildContext context) {
-    if (defaultTargetPlatform == TargetPlatform.android || 
+    if (defaultTargetPlatform == TargetPlatform.android ||
         defaultTargetPlatform == TargetPlatform.iOS) {
       return const MobileLayout();
     }
@@ -36,27 +36,62 @@ class _MobileLayoutState extends State<MobileLayout> {
   bool _isSubmitting = false;
   String? _error;
   int _remainingLeaveDays = 28;
-
   final _startDateController = TextEditingController();
   final _endDateController = TextEditingController();
   final _reasonController = TextEditingController();
-
   CalendarFormat _calendarFormat = CalendarFormat.month;
   DateTime _focusedDay = DateTime.now();
   DateTime? _selectedDay;
   Map<DateTime, List<Map<String, dynamic>>> _events = {};
-
   bool _showWorkWeek = false;
-
   DateTime? _lastSubmitTime;
   DateTime? _lastDeleteTime;
   static const _rateLimitDuration = Duration(seconds: 5);
+  bool _isManager = false;
+  String? _selectedVerlofType;
+  final List<String> _verlofTypes = ['sick', 'holiday', 'personal'];
 
   @override
   void initState() {
     super.initState();
-    _fetchRequests();
+    _checkManagerAndFetch();
     _fetchLeaveBalance();
+  }
+
+  Future<void> _checkManagerAndFetch() async {
+    final session = supabase.auth.currentSession;
+    if (session == null) {
+      setState(() => _error = 'Not logged in.');
+      return;
+    }
+    try {
+      final jwt = session.accessToken;
+      final payload = Jwt.parseJwt(jwt);
+      final roleFromJwt = payload['app_metadata']?['user_role'] as String? ??
+          payload['user_role'] as String?;
+      if (roleFromJwt != null) {
+        final isManager = roleFromJwt == 'manager';
+        setState(() => _isManager = isManager);
+        await _fetchRequests();
+        return;
+      }
+      print('JWT has no user_role. Falling back to permissions table...');
+      final userId = supabase.auth.currentUser?.id;
+      if (userId == null) throw 'No user ID';
+      final response = await supabase
+          .from('permissions')
+          .select('role')
+          .eq('user_uuid', userId)
+          .maybeSingle();
+      final roleFromDb = response?['role'] as String?;
+      final isManager = roleFromDb == 'manager';
+      setState(() => _isManager = isManager);
+      await _fetchRequests();
+    } catch (e, st) {
+      print('ERROR in _checkManagerAndFetch: $e');
+      print(st);
+      setState(() => _error = 'Failed to check permissions: $e');
+    }
   }
 
   Future<bool> _validateSession() async {
@@ -128,23 +163,34 @@ class _MobileLayoutState extends State<MobileLayout> {
       return;
     }
     try {
-      final response = await supabase
-          .from('verlof')
-          .select('*')
-          .eq('user_id', userId)
-          .order('created_at', ascending: false);
-      final List<Map<String, dynamic>> requests =
-          List<Map<String, dynamic>>.from(response);
+      print('Fetching requests for user: $userId | isManager: $_isManager');
+      late final PostgrestList response;
+      if (_isManager) {
+        response = await supabase
+            .from('verlof')
+            .select('*')
+            .order('created_at', ascending: false);
+      } else {
+        response = await supabase
+            .from('verlof')
+            .select('*')
+            .eq('user_id', userId)
+            .order('created_at', ascending: false);
+      }
+      print('Fetched ${response.length} requests');
+      final List<Map<String, dynamic>> requests = List.from(response);
       setState(() {
         _requests = requests;
         _events = _buildEventsMap(requests);
         _isLoadingRequests = false;
         _error = null;
       });
-    } catch (e) {
+    } catch (e, st) {
+      print('ERROR in _fetchRequests: $e');
+      print(st);
       setState(() {
         _isLoadingRequests = false;
-        _error = 'Unable to load requests.';
+        _error = 'Failed to load requests: $e';
       });
     }
   }
@@ -159,10 +205,8 @@ class _MobileLayoutState extends State<MobileLayout> {
       final startUtc = DateTime.tryParse(startStr);
       final endUtc = DateTime.tryParse(endStr);
       if (startUtc == null || endUtc == null) continue;
-      var current = DateTime(startUtc.year, startUtc.month, startUtc.day)
-          .add(const Duration(days: 1));
-      final end = DateTime(endUtc.year, endUtc.month, endUtc.day)
-          .add(const Duration(days: 1));
+      var current = DateTime.utc(startUtc.year, startUtc.month, startUtc.day);
+      final end = DateTime.utc(endUtc.year, endUtc.month, endUtc.day);
       while (!current.isAfter(end)) {
         final key = DateTime(current.year, current.month, current.day);
         events.putIfAbsent(key, () => []).add(req);
@@ -206,9 +250,15 @@ class _MobileLayoutState extends State<MobileLayout> {
     }
     final startTxt = _startDateController.text.trim();
     final endTxt = _endDateController.text.trim();
-    final reason = _reasonController.text.trim();
-    if (startTxt.isEmpty || endTxt.isEmpty || reason.isEmpty) {
-      _showSnackBar('Please fill all fields.', isError: true);
+    final customReason = _reasonController.text.trim();
+    final quickType = _selectedVerlofType;
+    if (startTxt.isEmpty || endTxt.isEmpty) {
+      _showSnackBar('Please select start and end date.', isError: true);
+      setState(() => _isSubmitting = false);
+      return;
+    }
+    if (quickType == null && customReason.isEmpty) {
+      _showSnackBar('Please select a type or enter a reason.', isError: true);
       setState(() => _isSubmitting = false);
       return;
     }
@@ -231,18 +281,24 @@ class _MobileLayoutState extends State<MobileLayout> {
         DateTime(startDt.year, startDt.month, startDt.day).toUtc().toIso8601String();
     final endUtc =
         DateTime(endDt.year, endDt.month, endDt.day).toUtc().toIso8601String();
+    final String reasonText = customReason.isNotEmpty
+        ? customReason
+        : (quickType == 'personal' ? 'Personal reason' : quickType!);
+
     try {
       await supabase.from('verlof').insert({
         'start': startUtc,
         'end_time': endUtc,
-        'type': reason,
-        'approved': false,
+        'reason': reasonText,
+        'verlof_type': quickType,
+        'verlof_state': 'pending',
         'user_id': userId,
         'days_count': daysRequested,
       }).select();
       _showSnackBar('Request submitted successfully!');
       _clearForm();
-      _fetchRequests();
+      setState(() => _selectedVerlofType = null);
+      await _fetchRequests();
       _fetchLeaveBalance();
     } catch (e) {
       _showSnackBar('Failed to submit request: $e', isError: true);
@@ -264,23 +320,78 @@ class _MobileLayoutState extends State<MobileLayout> {
         title: const Text('Delete Request'),
         content: const Text('This cannot be undone. Proceed?'),
         actions: [
-          TextButton(
-              onPressed: () => Navigator.pop(context, false),
-              child: const Text('Cancel')),
-          TextButton(
-              onPressed: () => Navigator.pop(context, true),
-              child: const Text('Delete', style: TextStyle(color: Colors.red))),
+          TextButton(onPressed: () => Navigator.pop(context, false), child: const Text('Cancel')),
+          TextButton(onPressed: () => Navigator.pop(context, true), child: const Text('Delete', style: TextStyle(color: Colors.red))),
         ],
       ),
     );
     if (confirm != true) return;
     try {
-      await supabase.from('verlof').delete().eq('id', requestId);
+      final id = requestId is int
+          ? requestId
+          : (requestId is String ? int.tryParse(requestId) : null);
+      if (id == null) throw 'Invalid request ID';
+      final req = _requests.firstWhere((r) => r['id'] == id, orElse: () => throw 'Request not found');
+      final wasApproved = req['verlof_state'] == 'approved';
+      final days = (req['days_count'] as num?)?.toInt() ?? 0;
+      final userId = req['user_id'] as String?;
+      if (userId == null) throw 'Missing user ID';
+      await supabase.from('verlof').delete().eq('id', id);
+      if (wasApproved && days > 0) {
+        try {
+          await supabase.rpc('decrement_leave_used', params: {
+            'p_user_id': userId,
+            'p_days': days,
+          });
+        } catch (rpcError) {
+          print('RPC decrement failed: $rpcError');
+          if (userId == supabase.auth.currentUser?.id) {
+            await _fetchLeaveBalance();
+          }
+          _showSnackBar('Warning: Leave balance may be out of sync.', isError: true);
+        }
+      }
       _showSnackBar('Request deleted successfully.');
-      _fetchRequests();
-      _fetchLeaveBalance();
+      await _fetchRequests();
+      if (userId == supabase.auth.currentUser?.id) {
+        await _fetchLeaveBalance();
+      }
     } catch (e) {
+      print('Delete error: $e');
       _showSnackBar('Failed to delete request: $e', isError: true);
+    }
+  }
+
+  Future<void> _updateRequestStatus(int id, String state) async {
+    try {
+      final req = _requests.firstWhere((r) => r['id'] == id);
+      final userId = req['user_id'];
+      final days = req['days_count'] as int;
+
+      final newState = state == 'approve' ? 'approved'
+                     : state == 'deny'   ? 'denied'
+                     : state;
+
+      await supabase
+          .from('verlof')
+          .update({'verlof_state': newState})
+          .eq('id', id);
+
+      if (newState == 'approved') {
+        await supabase.rpc('increment_leave_used', params: {
+          'p_user_id': userId,
+          'p_days': days,
+        });
+      }
+
+      _showSnackBar('Request ${newState == 'approved' ? 'approved' : newState == 'denied' ? 'denied' : 'set to pending'}.');
+      
+      await _fetchRequests();
+      if (userId == supabase.auth.currentUser?.id) {
+        await _fetchLeaveBalance();
+      }
+    } catch (e) {
+      _showSnackBar('Failed to update: $e', isError: true);
     }
   }
 
@@ -300,6 +411,7 @@ class _MobileLayoutState extends State<MobileLayout> {
     _startDateController.clear();
     _endDateController.clear();
     _reasonController.clear();
+    _selectedVerlofType = null;
   }
 
   void _showSnackBar(String message, {bool isError = false}) {
@@ -319,6 +431,18 @@ class _MobileLayoutState extends State<MobileLayout> {
     return _events[key] ?? [];
   }
 
+  String _getDisplayTitle(Map<String, dynamic> req) {
+    final verlofType = req['verlof_type'] as String?;
+    final reasonText = req['reason'] as String?;
+    if (verlofType != null) {
+      final capitalized = verlofType[0].toUpperCase() + verlofType.substring(1);
+      return reasonText != null && reasonText.toLowerCase() != verlofType
+          ? '$capitalized: $reasonText'
+          : capitalized;
+    }
+    return _sanitizeInput(reasonText ?? 'N/A');
+  }
+
   @override
   Widget build(BuildContext context) {
     return Scaffold(
@@ -329,20 +453,16 @@ class _MobileLayoutState extends State<MobileLayout> {
             // ==================== 滚动内容层 ====================
             Column(
               children: [
-                // HeaderBar
                 HeaderBar(),
-
-                // 主内容（可滚动）
                 Expanded(
                   child: _isLoadingRequests
                       ? const Center(child: CircularProgressIndicator())
                       : SingleChildScrollView(
                           padding: const EdgeInsets.only(
-                              top: 0, left: 16, right: 16, bottom: 120), // 预留空间
+                              top: 0, left: 16, right: 16, bottom: 120),
                           child: Column(
                             crossAxisAlignment: CrossAxisAlignment.start,
                             children: [
-                              // 大卡片（日历 + 表单 + 请求列表）
                               Container(
                                 width: double.infinity,
                                 padding: const EdgeInsets.all(20),
@@ -360,7 +480,6 @@ class _MobileLayoutState extends State<MobileLayout> {
                                 child: Column(
                                   crossAxisAlignment: CrossAxisAlignment.start,
                                   children: [
-                                    // Month/Week 切换
                                     Row(
                                       mainAxisAlignment: MainAxisAlignment.spaceBetween,
                                       children: [
@@ -401,10 +520,8 @@ class _MobileLayoutState extends State<MobileLayout> {
                                     const SizedBox(height: 16),
                                     const Divider(height: 1),
                                     const SizedBox(height: 16),
-
-                                    // TableCalendar
                                     TableCalendar(
-                                      firstDay: DateTime.now().subtract(const Duration(days: 365)),
+                                      firstDay: DateTime.now(),
                                       lastDay: DateTime.now().add(const Duration(days: 365)),
                                       focusedDay: _focusedDay,
                                       calendarFormat: _calendarFormat,
@@ -423,8 +540,7 @@ class _MobileLayoutState extends State<MobileLayout> {
                                       calendarStyle: CalendarStyle(
                                         outsideDaysVisible: false,
                                         weekendTextStyle: TextStyle(
-                                          color: _showWorkWeek ? Colors.grey[400] : Colors.red,
-                                        ),
+                                            color: _showWorkWeek ? Colors.grey[400] : Colors.red),
                                         disabledTextStyle: TextStyle(color: Colors.grey[400]),
                                       ),
                                       calendarBuilders: CalendarBuilders(
@@ -434,15 +550,20 @@ class _MobileLayoutState extends State<MobileLayout> {
                                             mainAxisAlignment: MainAxisAlignment.center,
                                             children: ev.take(3).map((e) {
                                               final req = e as Map<String, dynamic>;
-                                              final approved = req['approved'] == true;
-                                              final denied = req['approved'] == null;
+                                              final state = req['verlof_state'] as String?;
+                                              final approved = state == 'approved';
+                                              final denied = state == 'denied';
                                               return Container(
                                                 margin: const EdgeInsets.symmetric(horizontal: 1),
                                                 width: 6,
                                                 height: 6,
                                                 decoration: BoxDecoration(
                                                   shape: BoxShape.circle,
-                                                  color: approved ? Colors.green : denied ? Colors.red : Colors.orange,
+                                                  color: approved
+                                                      ? Colors.green
+                                                      : denied
+                                                          ? Colors.red
+                                                          : Colors.orange,
                                                 ),
                                               );
                                             }).toList(),
@@ -450,64 +571,81 @@ class _MobileLayoutState extends State<MobileLayout> {
                                         },
                                       ),
                                     ),
-
                                     const SizedBox(height: 32),
-
-                                    // 新增请假表单
-                                    const Text('New Leave Request',
-                                        style: TextStyle(fontSize: 18, fontWeight: FontWeight.bold)),
-                                    const SizedBox(height: 16),
-                                    TextField(
-                                      controller: _startDateController,
-                                      decoration: const InputDecoration(
-                                        labelText: 'Start Date',
-                                        border: OutlineInputBorder(),
-                                        suffixIcon: Icon(Icons.calendar_today),
-                                      ),
-                                      readOnly: true,
-                                      onTap: () => _pickDate(_startDateController),
-                                    ),
-                                    const SizedBox(height: 12),
-                                    TextField(
-                                      controller: _endDateController,
-                                      decoration: const InputDecoration(
-                                        labelText: 'End Date',
-                                        border: OutlineInputBorder(),
-                                        suffixIcon: Icon(Icons.calendar_today),
-                                      ),
-                                      readOnly: true,
-                                      onTap: () => _pickDate(_endDateController),
-                                    ),
-                                    const SizedBox(height: 12),
-                                    TextField(
-                                      controller: _reasonController,
-                                      decoration: const InputDecoration(
-                                        labelText: 'Reason',
-                                        border: OutlineInputBorder(),
-                                      ),
-                                      maxLines: 3,
-                                    ),
-                                    const SizedBox(height: 16),
-                                    SizedBox(
-                                      width: double.infinity,
-                                      child: ElevatedButton(
-                                        onPressed: _isSubmitting ? null : _submitRequest,
-                                        style: ElevatedButton.styleFrom(
-                                          backgroundColor: Colors.red,
-                                          padding: const EdgeInsets.symmetric(vertical: 16),
-                                          shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(12)),
+                                    if (!_isManager) ...[
+                                      Text('New Leave Request', style: const TextStyle(fontSize: 18, fontWeight: FontWeight.bold)),
+                                      const SizedBox(height: 16),
+                                      DropdownButtonFormField<String>(
+                                        value: _selectedVerlofType,
+                                        decoration: const InputDecoration(
+                                          labelText: 'Quick Type',
+                                          border: OutlineInputBorder(),
                                         ),
-                                        child: _isSubmitting
-                                            ? const CircularProgressIndicator(color: Colors.white)
-                                            : const Text('Submit', style: TextStyle(fontSize: 16, color: Colors.white)),
+                                        hint: const Text('Select type (optional)'),
+                                        items: _verlofTypes.map((type) => DropdownMenuItem(
+                                          value: type,
+                                          child: Text(type[0].toUpperCase() + type.substring(1)),
+                                        )).toList(),
+                                        onChanged: (value) {
+                                          setState(() => _selectedVerlofType = value);
+                                          if (value != null && value != 'personal') {
+                                            _reasonController.text = value;
+                                          }
+                                        },
                                       ),
+                                      const SizedBox(height: 12),
+                                      TextField(
+                                        controller: _reasonController,
+                                        decoration: const InputDecoration(
+                                          labelText: 'Custom Reason',
+                                          hintText: 'e.g. Dentist, Wedding, etc. (optional if quick type selected)',
+                                          border: OutlineInputBorder(),
+                                        ),
+                                        maxLines: 3,
+                                      ),
+                                      const SizedBox(height: 12),
+                                      TextField(
+                                        controller: _startDateController,
+                                        decoration: const InputDecoration(
+                                          labelText: 'Start Date',
+                                          border: OutlineInputBorder(),
+                                          suffixIcon: Icon(Icons.calendar_today),
+                                        ),
+                                        readOnly: true,
+                                        onTap: () => _pickDate(_startDateController),
+                                      ),
+                                      const SizedBox(height: 12),
+                                      TextField(
+                                        controller: _endDateController,
+                                        decoration: const InputDecoration(
+                                          labelText: 'End Date',
+                                          border: OutlineInputBorder(),
+                                          suffixIcon: Icon(Icons.calendar_today),
+                                        ),
+                                        readOnly: true,
+                                        onTap: () => _pickDate(_endDateController),
+                                      ),
+                                      const SizedBox(height: 16),
+                                      SizedBox(
+                                        width: double.infinity,
+                                        child: ElevatedButton(
+                                          onPressed: _isSubmitting ? null : _submitRequest,
+                                          style: ElevatedButton.styleFrom(
+                                            backgroundColor: Colors.red,
+                                            padding: const EdgeInsets.symmetric(vertical: 16),
+                                            shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(12)),
+                                          ),
+                                          child: _isSubmitting
+                                              ? const CircularProgressIndicator(color: Colors.white)
+                                              : const Text('Submit', style: TextStyle(fontSize: 16, color: Colors.white)),
+                                        ),
+                                      ),
+                                      const SizedBox(height: 32),
+                                    ],
+                                    Text(
+                                      _isManager ? 'Team Requests' : 'My Requests',
+                                      style: Theme.of(context).textTheme.titleLarge?.copyWith(fontWeight: FontWeight.bold),
                                     ),
-
-                                    const SizedBox(height: 32),
-
-                                    // 所有请求
-                                    Text('All Requests',
-                                        style: Theme.of(context).textTheme.titleLarge?.copyWith(fontWeight: FontWeight.bold)),
                                     const SizedBox(height: 12),
                                     _requests.isEmpty
                                         ? const Text('No requests yet.')
@@ -517,22 +655,20 @@ class _MobileLayoutState extends State<MobileLayout> {
                                             itemCount: _requests.length,
                                             itemBuilder: (c, i) {
                                               final req = _requests[i];
-                                              final start = DateTime.tryParse(req['start'] ?? '')
-                                                  ?.toLocal()
-                                                  .add(const Duration(days: 1));
-                                              final end = DateTime.tryParse(req['end_time'] ?? '')
-                                                  ?.toLocal()
-                                                  .add(const Duration(days: 1));
-                                              final status = req['approved'] == true
+                                              final start = DateTime.tryParse(req['start'] ?? '')?.toLocal();
+                                              final end = DateTime.tryParse(req['end_time'] ?? '')?.toLocal();
+                                              final state = req['verlof_state'] as String?;
+                                              final status = state == 'approved'
                                                   ? 'Approved'
-                                                  : req['approved'] == false
-                                                      ? 'Pending'
-                                                      : 'Denied';
+                                                  : state == 'denied'
+                                                      ? 'Denied'
+                                                      : 'Pending';
                                               final days = req['days_count'] as int? ?? 0;
+                                              final isOwn = req['user_id'] == supabase.auth.currentUser?.id;
                                               return Card(
                                                 margin: const EdgeInsets.symmetric(vertical: 6),
                                                 child: ListTile(
-                                                  title: Text(_sanitizeInput(req['type'] ?? 'N/A')),
+                                                  title: Text(_getDisplayTitle(req)),
                                                   subtitle: Column(
                                                     crossAxisAlignment: CrossAxisAlignment.start,
                                                     children: [
@@ -542,11 +678,29 @@ class _MobileLayoutState extends State<MobileLayout> {
                                                         Text('End: ${DateFormat('yyyy-MM-dd').format(end)}'),
                                                       Text('Status: $status'),
                                                       Text('Days: $days'),
+                                                      if (_isManager) Text('User: ${req['user_id']}'),
                                                     ],
                                                   ),
-                                                  trailing: IconButton(
-                                                    icon: const Icon(Icons.delete, color: Colors.red),
-                                                    onPressed: () => _deleteRequest(req['id']),
+                                                  trailing: Row(
+                                                    mainAxisSize: MainAxisSize.min,
+                                                    children: [
+                                                      // Manager actions: only on OTHER people's requests
+                                                      if (_isManager && !isOwn) ...[
+                                                        if (state != 'approved')
+                                                          IconButton(icon: const Icon(Icons.check, color: Colors.green),   onPressed: () => _updateRequestStatus(req['id'], 'approved'), tooltip: 'Approve'),
+                                                        if (state != 'pending')
+                                                          IconButton(icon: const Icon(Icons.hourglass_empty, color: Colors.orange), onPressed: () => _updateRequestStatus(req['id'], 'pending'), tooltip: 'Set Pending'),
+                                                        if (state != 'denied')
+                                                          IconButton(icon: const Icon(Icons.close, color: Colors.red),    onPressed: () => _updateRequestStatus(req['id'], 'denied'),   tooltip: 'Deny'),
+                                                      ],
+                                                      // Delete: allowed on own request OR on others if manager
+                                                      if (isOwn || _isManager)
+                                                        IconButton(
+                                                          icon: const Icon(Icons.delete, color: Colors.red),
+                                                          onPressed: () => _deleteRequest(req['id']),
+                                                          tooltip: 'Delete',
+                                                      ),
+                                                    ],
                                                   ),
                                                 ),
                                               );
@@ -590,6 +744,7 @@ class _MobileLayoutState extends State<MobileLayout> {
   }
 }
 
+// ====================== DESKTOP LAYOUT（保留原逻辑）======================
 class DesktopLayout extends StatefulWidget {
   const DesktopLayout({super.key});
 
@@ -859,7 +1014,7 @@ class _DesktopLayoutState extends State<DesktopLayout> {
         'end_time': endUtc,
         'reason': reasonText,
         'verlof_type': quickType,
-        'verlof_state': 'pending',  // ← FIXED: Always 'pending'
+        'verlof_state': 'pending',
         'user_id': userId,
         'days_count': daysRequested,
       }).select();
@@ -942,7 +1097,7 @@ class _DesktopLayoutState extends State<DesktopLayout> {
 
       await supabase
           .from('verlof')
-          .update({'verlof_state': newState})  // ← use the corrected value
+          .update({'verlof_state': newState})
           .eq('id', id);
 
       if (newState == 'approved') {
@@ -1207,9 +1362,8 @@ class _DesktopLayoutState extends State<DesktopLayout> {
                                     const Text('Work Week'),
                                     Switch(
                                       value: _showWorkWeek,
-                                      onChanged: (v) =>
-                                          setState(() => _showWorkWeek = v),
-                                      activeThumbColor: Colors.red,
+                                      onChanged: (v) => setState(() => _showWorkWeek = v),
+                                      activeColor: Colors.red,
                                     ),
                                   ],
                                 ),
@@ -1273,7 +1427,6 @@ class _DesktopLayoutState extends State<DesktopLayout> {
                                   style: const TextStyle(fontSize: 18, fontWeight: FontWeight.bold),
                                 ),
                                 const SizedBox(height: 16),
-                                if (!_isManager) ...[
                                   DropdownButtonFormField<String>(
                                     value: _selectedVerlofType,
                                     decoration: const InputDecoration(
@@ -1341,7 +1494,6 @@ class _DesktopLayoutState extends State<DesktopLayout> {
                                     ),
                                   ),
                                   const SizedBox(height: 32),
-                                ],
                                 Text(
                                   _isManager ? 'Team Requests' : 'My Requests',
                                   style: Theme.of(context).textTheme.titleLarge?.copyWith(fontWeight: FontWeight.bold),
@@ -1384,31 +1536,22 @@ class _DesktopLayoutState extends State<DesktopLayout> {
                                               trailing: Row(
                                                 mainAxisSize: MainAxisSize.min,
                                                 children: [
-                                                  if (_isManager) ...[
+                                                  // Manager actions: only on OTHER people's requests
+                                                  if (_isManager && !isOwn) ...[
                                                     if (state != 'approved')
-                                                      IconButton(
-                                                        icon: const Icon(Icons.check, color: Colors.green),
-                                                        onPressed: () => _updateRequestStatus(req['id'], 'approved'), // ← was correct
-                                                        tooltip: 'Approve',
-                                                      ),
+                                                      IconButton(icon: const Icon(Icons.check, color: Colors.green),   onPressed: () => _updateRequestStatus(req['id'], 'approved'), tooltip: 'Approve'),
                                                     if (state != 'pending')
-                                                      IconButton(
-                                                        icon: const Icon(Icons.hourglass_empty, color: Colors.orange),
-                                                        onPressed: () => _updateRequestStatus(req['id'], 'pending'), // ← was correct
-                                                        tooltip: 'Pending',
-                                                      ),
+                                                      IconButton(icon: const Icon(Icons.hourglass_empty, color: Colors.orange), onPressed: () => _updateRequestStatus(req['id'], 'pending'), tooltip: 'Set Pending'),
                                                     if (state != 'denied')
-                                                      IconButton(
-                                                        icon: const Icon(Icons.close, color: Colors.red),
-                                                        onPressed: () => _updateRequestStatus(req['id'], 'denied'), // ← was correct
-                                                        tooltip: 'Deny',
-                                                      ),
+                                                      IconButton(icon: const Icon(Icons.close, color: Colors.red),    onPressed: () => _updateRequestStatus(req['id'], 'denied'),   tooltip: 'Deny'),
                                                   ],
+                                                  // Delete: allowed on own request OR on others if manager
                                                   if (isOwn || _isManager)
                                                     IconButton(
                                                       icon: const Icon(Icons.delete, color: Colors.red),
                                                       onPressed: () => _deleteRequest(req['id']),
-                                                    ),
+                                                      tooltip: 'Delete',
+                                                  ),
                                                 ],
                                               ),
                                             ),
@@ -1424,15 +1567,17 @@ class _DesktopLayoutState extends State<DesktopLayout> {
                     ),
                   ),
             Positioned(
-                bottom: 24,
-                left: 0,
-                right: 0,
-                child: Center(child: Navbar())),
+              bottom: 24,
+              left: 0,
+              right: 0,
+              child: Center(child: Navbar()),
+            ),
           ],
         ),
       ),
     );
   }
+
 
   @override
   void dispose() {

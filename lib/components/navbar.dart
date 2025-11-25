@@ -12,8 +12,51 @@ class _NavbarState extends State<Navbar> {
   int _selectedIndex = -1;
   final supabase = Supabase.instance.client;
 
-  // Check if user is logged in
-  bool get _isLoggedIn => supabase.auth.currentUser != null;
+  bool _isLoggedIn = false;
+  bool _isAdmin = false;
+
+  @override
+  void initState() {
+    super.initState();
+    _checkAuthAndRole();
+    
+    // Luister naar login/logout veranderingen
+    supabase.auth.onAuthStateChange.listen((_) {
+      _checkAuthAndRole();
+    });
+  }
+
+  Future<void> _checkAuthAndRole() async {
+    final user = supabase.auth.currentUser;
+
+    setState(() {
+      _isLoggedIn = user != null;
+    });
+
+    if (user == null) {
+      setState(() => _isAdmin = false);
+      return;
+    }
+
+    try {
+      final response = await supabase
+          .from('permissions')
+          .select('role')
+          .eq('user_uuid', user.id)
+          .maybeSingle();
+
+      final bool isAdmin = response != null && (response['role'] as String?) == 'admin';
+
+      if (mounted) {
+        setState(() => _isAdmin = isAdmin);
+      }
+    } catch (e) {
+      // Als er iets misgaat → geen admin rechten tonen
+      if (mounted) {
+        setState(() => _isAdmin = false);
+      }
+    }
+  }
 
   void _onItemTapped(int index) {
     setState(() {
@@ -27,26 +70,21 @@ class _NavbarState extends State<Navbar> {
   }
 
   String? _getRouteForIndex(int index) {
-    switch (index) {
-      case 0:
-        return '/dashboard';
-      case 1:
-        return _isLoggedIn ? '/profile' : '/login'; // MAGIC LINE
-      case 2:
-        return '/';
-      case 3:
-        return '/mail';
-      case 4:
-        return '/notifications';
-      default:
-        return null;
-    }
+    return switch (index) {
+      0 => '/verlof',
+      1 => _isLoggedIn ? '/profile' : '/login',
+      2 => '/',
+      3 => '/mail',
+      4 => '/notifications',
+      5 => '/admin',
+      _ => null,
+    };
   }
 
   @override
   Widget build(BuildContext context) {
     return Container(
-      width: MediaQuery.of(context).size.width.clamp(280, 320),
+      width: MediaQuery.of(context).size.width.clamp(280, 340),
       height: 48,
       decoration: BoxDecoration(
         color: Colors.black,
@@ -54,15 +92,11 @@ class _NavbarState extends State<Navbar> {
       ),
       child: Row(
         mainAxisAlignment: MainAxisAlignment.spaceEvenly,
-        crossAxisAlignment: CrossAxisAlignment.center,
         children: [
-          // 0 – Calendar
           _buildNavItem(Icons.calendar_today, 0),
-
-          // 1 – Person (Login → Profile)
           _buildNavItem(Icons.person, 1),
 
-          // 2 – Home (red circle)
+          // Home knop (rood)
           SizedBox(
             width: 40,
             child: Container(
@@ -81,11 +115,12 @@ class _NavbarState extends State<Navbar> {
             ),
           ),
 
-          // 3 – Mail
           _buildNavItem(Icons.mail, 3),
-
-          // 4 – Notifications
           _buildNavItem(Icons.notifications, 4),
+
+          // ADMIN ICOON → ALLEEN VOOR ADMINS (zelfde check als admin.dart)
+          if (_isAdmin)
+            _buildNavItem(Icons.admin_panel_settings, 5),
         ],
       ),
     );
