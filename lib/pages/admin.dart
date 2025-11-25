@@ -1,23 +1,122 @@
 import 'package:flutter/material.dart';
-import 'package:flutter/foundation.dart'; // Toegevoegd voor kIsWeb
+import 'package:flutter/foundation.dart'; 
 import 'package:supabase_flutter/supabase_flutter.dart';
 
 
-class AdminPage extends StatelessWidget {
+class AdminPage extends StatefulWidget {
   const AdminPage({super.key});
 
   @override
+  State<AdminPage> createState() => _AdminPageState();
+}
+
+class _AdminPageState extends State<AdminPage> {
+  bool _isAdmin = false;
+  bool _loading = true;
+  User? _user;
+
+  @override
+  void initState() {
+    super.initState();
+    _checkAdminStatus();
+  }
+
+  Future<void> _checkAdminStatus() async {
+    final supabase = Supabase.instance.client;
+    _user = supabase.auth.currentUser;
+
+    if (_user == null) {
+      if (mounted) {
+        Navigator.of(context).pop();
+      }
+      return;
+    }
+
+    setState(() {
+      _loading = true;
+    });
+
+    try {
+      final response = await supabase
+          .from('permissions')
+          .select('role')
+          .eq('user_uuid', _user!.id)
+          .maybeSingle();
+
+      final bool isAdmin = response != null && (response['role'] as String?) == 'admin';
+
+      if (mounted) {
+        setState(() {
+          _isAdmin = isAdmin;
+          _loading = false;
+        });
+
+        if (!isAdmin) {
+          ScaffoldMessenger.of(context).showSnackBar(
+            const SnackBar(content: Text('Toegang geweigerd.')),
+          );
+          Navigator.of(context).pop();
+        }
+      }
+    } on PostgrestException catch (e) {
+      if (mounted) {
+        setState(() {
+          _loading = false;
+        });
+        ScaffoldMessenger.of(context).showSnackBar(
+          SnackBar(content: Text('Fout bij ophalen rechten: ${e.message}')),
+        );
+        Navigator.of(context).pop();
+      }
+    } catch (e) {
+      if (mounted) {
+        setState(() {
+          _loading = false;
+        });
+        ScaffoldMessenger.of(context).showSnackBar(
+          const SnackBar(content: Text('Onverwachte fout bij controleren admin status.')),
+        );
+        Navigator.of(context).pop();
+      }
+    }
+  }
+
+  @override
   Widget build(BuildContext context) {
-    // Detecteer web met kIsWeb, anders gebruik MediaQuery voor layout
+    if (_loading) {
+      return const Scaffold(
+        body: Center(child: CircularProgressIndicator()),
+      );
+    }
+
+    if (!_isAdmin) {
+      return Scaffold(
+        body: Center(
+          child: Column(
+            mainAxisAlignment: MainAxisAlignment.center,
+            children: [
+              const Icon(Icons.lock, size: 80, color: Colors.red),
+              const SizedBox(height: 16),
+              const Text('Toegang geweigerd', style: TextStyle(fontSize: 24)),
+              const SizedBox(height: 8),
+              Text('Alleen administrators kunnen deze pagina bekijken.',
+                  style: TextStyle(color: Colors.grey[600])),
+              const SizedBox(height: 20),
+              ElevatedButton(
+                onPressed: () => Navigator.of(context).pop(),
+                child: const Text('Terug'),
+              ),
+            ],
+          ),
+        ),
+      );
+    }
+
     if (kIsWeb) {
       return const DesktopLayout();
     } else {
       final shortestSide = MediaQuery.of(context).size.shortestSide;
-      if (shortestSide < 600) {
-        return const MobileLayout();
-      } else {
-        return const DesktopLayout();
-      }
+      return shortestSide < 600 ? const MobileLayout() : const DesktopLayout();
     }
   }
 }

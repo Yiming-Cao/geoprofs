@@ -1,4 +1,5 @@
 import 'package:flutter/material.dart';
+import 'package:supabase_flutter/supabase_flutter.dart';
 
 class Navbar extends StatefulWidget {
   const Navbar({super.key});
@@ -8,23 +9,82 @@ class Navbar extends StatefulWidget {
 }
 
 class _NavbarState extends State<Navbar> {
-  int _selectedIndex = 0;
+  int _selectedIndex = -1;
+  final supabase = Supabase.instance.client;
+
+  bool _isLoggedIn = false;
+  bool _isAdmin = false;
+
+  @override
+  void initState() {
+    super.initState();
+    _checkAuthAndRole();
+    
+    // Luister naar login/logout veranderingen
+    supabase.auth.onAuthStateChange.listen((_) {
+      _checkAuthAndRole();
+    });
+  }
+
+  Future<void> _checkAuthAndRole() async {
+    final user = supabase.auth.currentUser;
+
+    setState(() {
+      _isLoggedIn = user != null;
+    });
+
+    if (user == null) {
+      setState(() => _isAdmin = false);
+      return;
+    }
+
+    try {
+      final response = await supabase
+          .from('permissions')
+          .select('role')
+          .eq('user_uuid', user.id)
+          .maybeSingle();
+
+      final bool isAdmin = response != null && (response['role'] as String?) == 'admin';
+
+      if (mounted) {
+        setState(() => _isAdmin = isAdmin);
+      }
+    } catch (e) {
+      // Als er iets misgaat → geen admin rechten tonen
+      if (mounted) {
+        setState(() => _isAdmin = false);
+      }
+    }
+  }
 
   void _onItemTapped(int index) {
     setState(() {
       _selectedIndex = index;
     });
-    if (index == 1) {
-      Navigator.pushNamed(context, '/login');
-    } else if (index == 2) {
-      Navigator.pushNamed(context, '/dashboard');
+
+    final route = _getRouteForIndex(index);
+    if (route != null) {
+      Navigator.pushNamed(context, route);
     }
+  }
+
+  String? _getRouteForIndex(int index) {
+    return switch (index) {
+      0 => '/verlof',
+      1 => _isLoggedIn ? '/profile' : '/login',
+      2 => '/',
+      3 => '/mail',
+      4 => '/notifications',
+      5 => '/admin',
+      _ => null,
+    };
   }
 
   @override
   Widget build(BuildContext context) {
     return Container(
-      width: MediaQuery.of(context).size.width.clamp(280, 320), // Phone-friendly width
+      width: MediaQuery.of(context).size.width.clamp(280, 340),
       height: 48,
       decoration: BoxDecoration(
         color: Colors.black,
@@ -32,26 +92,11 @@ class _NavbarState extends State<Navbar> {
       ),
       child: Row(
         mainAxisAlignment: MainAxisAlignment.spaceEvenly,
-        crossAxisAlignment: CrossAxisAlignment.center,
         children: [
-          SizedBox(
-            width: 40,
-            child: IconButton(
-              padding: EdgeInsets.zero,
-              icon: const Icon(Icons.calendar_today, size: 24),
-              color: _selectedIndex == 0 ? const Color(0xFFEE6055) : Colors.white,
-              onPressed: () => _onItemTapped(0),
-            ),
-          ),
-          SizedBox(
-            width: 40,
-            child: IconButton(
-              padding: EdgeInsets.zero,
-              icon: const Icon(Icons.person, size: 24),
-              color: _selectedIndex == 1 ? const Color(0xFFEE6055) : Colors.white,
-              onPressed: () => _onItemTapped(1),
-            ),
-          ),
+          _buildNavItem(Icons.calendar_today, 0),
+          _buildNavItem(Icons.person, 1),
+
+          // Home knop (rood)
           SizedBox(
             width: 40,
             child: Container(
@@ -69,25 +114,26 @@ class _NavbarState extends State<Navbar> {
               ),
             ),
           ),
-          SizedBox(
-            width: 40,
-            child: IconButton(
-              padding: EdgeInsets.zero,
-              icon: const Icon(Icons.mail, size: 24),
-              color: _selectedIndex == 3 ? const Color(0xFFEE6055) : Colors.white,
-              onPressed: () => _onItemTapped(3),
-            ),
-          ),
-          SizedBox(
-            width: 40,
-            child: IconButton(
-              padding: EdgeInsets.zero,
-              icon: const Icon(Icons.notifications, size: 24),
-              color: _selectedIndex == 4 ? const Color(0xFFEE6055) : Colors.white,
-              onPressed: () => _onItemTapped(4),
-            ),
-          ),
+
+          _buildNavItem(Icons.mail, 3),
+          _buildNavItem(Icons.notifications, 4),
+
+          // ADMIN ICOON → ALLEEN VOOR ADMINS (zelfde check als admin.dart)
+          if (_isAdmin)
+            _buildNavItem(Icons.admin_panel_settings, 5),
         ],
+      ),
+    );
+  }
+
+  Widget _buildNavItem(IconData icon, int index) {
+    return SizedBox(
+      width: 40,
+      child: IconButton(
+        padding: EdgeInsets.zero,
+        icon: Icon(icon, size: 24),
+        color: _selectedIndex == index ? const Color(0xFFEE6055) : Colors.white,
+        onPressed: () => _onItemTapped(index),
       ),
     );
   }
