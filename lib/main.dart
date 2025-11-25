@@ -1,4 +1,5 @@
 import 'package:flutter/material.dart';
+import 'package:geoprof/pages/officemanager.dart';
 import 'package:supabase_flutter/supabase_flutter.dart';
 import 'package:geoprof/pages/dashboard.dart';
 import 'package:geoprof/pages/admin.dart';
@@ -9,6 +10,7 @@ import 'package:geoprof/pages/profile.dart';
 import 'package:geoprof/pages/verlof.dart';
 
 Future<void> main() async {
+  
   WidgetsFlutterBinding.ensureInitialized();
   try {
     await Supabase.initialize(
@@ -39,6 +41,7 @@ class MyApp extends StatelessWidget {
         '/register': (context) => const RegisterPage(),
         '/profile': (context) => const ProfilePage(),
         '/verlof': (context) => const VerlofPage(),
+        '/officemanager':(context) => const OfficeManagerDashboard(),
       },
     );
   }
