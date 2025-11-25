@@ -52,10 +52,13 @@ class _MobileLayoutState extends State<MobileLayout> {
   final List<String> _verlofTypes = ['sick', 'holiday', 'personal'];
   Set<int> _selectedRequestIds = <int>{};
   bool _isBulkMode = false;
+  late DateTime _quickSickDate;
+  bool _isSubmittingQuickSick = false;
 
   @override
   void initState() {
     super.initState();
+    _quickSickDate = DateTime.now();
     _checkManagerAndFetch();
     _fetchLeaveBalance();
   }
@@ -488,6 +491,60 @@ class _MobileLayoutState extends State<MobileLayout> {
     }
   }
 
+  Future<void> _submitQuickSick() async {
+    if (_isSubmittingQuickSick) return;
+
+    setState(() => _isSubmittingQuickSick = true);
+
+    // Rate limit (reuse the same one you already have)
+    if (_lastSubmitTime != null &&
+        DateTime.now().difference(_lastSubmitTime!) < _rateLimitDuration) {
+      _showSnackBar('Please wait a moment before submitting again.', isError: true);
+      setState(() => _isSubmittingQuickSick = false);
+      return;
+    }
+    _lastSubmitTime = DateTime.now();
+
+    final userId = supabase.auth.currentUser?.id;
+    if (userId == null) {
+      _showSnackBar('Not logged in.', isError: true);
+      setState(() => _isSubmittingQuickSick = false);
+      return;
+    }
+
+    // Use the same date for start & end → 1 day
+    final day = DateTime(_quickSickDate.year, _quickSickDate.month, _quickSickDate.day);
+    final daysCount = _calculateWorkdays(day, day);
+
+    if (daysCount > _remainingLeaveDays) {
+      _showSnackBar('Not enough leave days left ($_remainingLeaveDays available).', isError: true);
+      setState(() => _isSubmittingQuickSick = false);
+      return;
+    }
+
+    final utc = day.toUtc().toIso8601String();
+
+    try {
+      await supabase.from('verlof').insert({
+        'start': utc,
+        'end_time': utc,
+        'reason': 'Sick',
+        'verlof_type': 'sick',
+        'verlof_state': 'pending',
+        'user_id': userId,
+        'days_count': daysCount,
+      });
+
+      _showSnackBar('Successfully called in sick for ${DateFormat('EEEE, MMM d').format(day)}');
+      await _fetchRequests();
+      await _fetchLeaveBalance();
+    } catch (e) {
+      _showSnackBar('Failed to submit sick day: $e', isError: true);
+    } finally {
+      setState(() => _isSubmittingQuickSick = false);
+    }
+  }
+
   void _clearForm() {
     _startDateController.clear();
     _endDateController.clear();
@@ -653,6 +710,85 @@ class _MobileLayoutState extends State<MobileLayout> {
                                       ),
                                     ),
                                     const SizedBox(height: 32),
+                                    if (!_isManager)
+                                      Container(
+                                        width: double.infinity,
+                                        padding: const EdgeInsets.all(20),
+                                        decoration: BoxDecoration(
+                                          color: Colors.red.shade50,
+                                          borderRadius: BorderRadius.circular(20),
+                                          border: Border.all(color: Colors.red.shade200, width: 1.5),
+                                        ),
+                                        child: Column(
+                                          crossAxisAlignment: CrossAxisAlignment.start,
+                                          children: [
+                                            const Row(
+                                              children: [
+                                                Icon(Icons.sick, color: Colors.red, size: 28),
+                                                SizedBox(width: 8),
+                                                Text(
+                                                  'Quick Sick',
+                                                  style: TextStyle(
+                                                    fontSize: 20,
+                                                    fontWeight: FontWeight.bold,
+                                                    color: Colors.red,
+                                                  ),
+                                                ),
+                                              ],
+                                            ),
+                                            const SizedBox(height: 8),
+                                            const Text(
+                                              'Instantly call in sick for 1 day (today or any date)',
+                                              style: TextStyle(color: Colors.redAccent),
+                                            ),
+                                            const SizedBox(height: 16),
+                                            SizedBox(
+                                              width: double.infinity,
+                                              child: ElevatedButton.icon(
+                                                onPressed: _isSubmittingQuickSick
+                                                    ? null
+                                                    : () async {
+                                                        final picked = await showDatePicker(
+                                                          context: context,
+                                                          initialDate: DateTime.now(),
+                                                          firstDate: DateTime.now().subtract(const Duration(days: 30)),
+                                                          lastDate: DateTime.now().add(const Duration(days: 365)),
+                                                          selectableDayPredicate: (date) => true,
+                                                        );
+                                                        if (picked != null && picked.isAfter(DateTime.now().subtract(const Duration(days: 1)))) {
+                                                          setState(() => _quickSickDate = picked);
+                                                          _submitQuickSick();
+                                                        } else if (picked != null) {
+                                                          _showSnackBar('Cannot select past dates for sick leave.', isError: true);
+                                                        }
+                                                      },
+                                                icon: _isSubmittingQuickSick
+                                                    ? const SizedBox(
+                                                        width: 20,
+                                                        height: 20,
+                                                        child: CircularProgressIndicator(color: Colors.white, strokeWidth: 2),
+                                                      )
+                                                    : const Icon(Icons.sick, color: Colors.white),
+                                                label: Text(
+                                                  _isSubmittingQuickSick ? 'Submitting...' : 'Call in Sick Now',
+                                                  style: const TextStyle(fontSize: 17, fontWeight: FontWeight.bold, color: Colors.white),
+                                                ),
+                                                style: ElevatedButton.styleFrom(
+                                                  backgroundColor: Colors.red,
+                                                  foregroundColor: Colors.white,
+                                                  padding: const EdgeInsets.symmetric(vertical: 18),
+                                                  shape: RoundedRectangleBorder(
+                                                    borderRadius: BorderRadius.circular(14),
+                                                  ),
+                                                ),
+                                              ),
+                                            ),
+                                          ],
+                                        ),
+                                      ),
+
+                                    const SizedBox(height: 32),
+
                                     if (!_isManager) ...[
                                       Text('New Leave Request', style: const TextStyle(fontSize: 18, fontWeight: FontWeight.bold)),
                                       const SizedBox(height: 16),
@@ -749,18 +885,33 @@ class _MobileLayoutState extends State<MobileLayout> {
                                                       ElevatedButton.icon(
                                                         icon: const Icon(Icons.check, size: 18),
                                                         label: const Text('Approve All'),
-                                                        style: ElevatedButton.styleFrom(backgroundColor: Colors.green),
+                                                        style: ElevatedButton.styleFrom(
+                                                          backgroundColor: Colors.green,
+                                                          foregroundColor: Colors.white,
+                                                        ),
                                                         onPressed: () => _bulkUpdateStatus('approve'),
                                                       ),
                                                       const SizedBox(width: 8),
                                                       ElevatedButton.icon(
                                                         icon: const Icon(Icons.close, size: 18),
                                                         label: const Text('Deny All'),
-                                                        style: ElevatedButton.styleFrom(backgroundColor: Colors.red),
+                                                        style: ElevatedButton.styleFrom(
+                                                          backgroundColor: Colors.red,
+                                                          foregroundColor: Colors.white,
+                                                        ),
                                                         onPressed: () => _bulkUpdateStatus('deny'),
                                                       ),
                                                       const SizedBox(width: 8),
-                                                      TextButton(onPressed: () => setState(() => _selectedRequestIds.clear()), child: const Text('Cancel')),
+                                                      TextButton(
+                                                        onPressed: () => setState(() {
+                                                          _selectedRequestIds.clear();
+                                                          _isBulkMode = false;
+                                                        }),
+                                                        child: const Text(
+                                                          'Cancel',
+                                                          style: TextStyle(color: Colors.black),
+                                                        ),
+                                                      ),
                                                     ],
                                                   ),
                                                 ),
@@ -788,7 +939,7 @@ class _MobileLayoutState extends State<MobileLayout> {
                                                                   .toSet();
                                                             });
                                                           },
-                                                          child: const Text('Select All Pending'),
+                                                          child: const Text('Select All unapproved'),
                                                         ),
                                                         TextButton(onPressed: () => setState(() => _selectedRequestIds.clear()), child: const Text('Clear')),
                                                         TextButton(onPressed: () => setState(() => _isBulkMode = false), child: const Text('Exit Bulk Mode')),
@@ -923,10 +1074,13 @@ class _DesktopLayoutState extends State<DesktopLayout> {
   final List<String> _verlofTypes = ['sick', 'holiday', 'personal'];
   Set<int> _selectedRequestIds = <int>{};
   bool _isBulkMode = false;
+  late DateTime _quickSickDate;
+  bool _isSubmittingQuickSick = false;
 
   @override
   void initState() {
     super.initState();
+    _quickSickDate = DateTime.now();
     _checkManagerAndFetch();
     _fetchLeaveBalance();
   }
@@ -1354,6 +1508,60 @@ class _DesktopLayoutState extends State<DesktopLayout> {
     }
   }
 
+  Future<void> _submitQuickSick() async {
+    if (_isSubmittingQuickSick) return;
+
+    setState(() => _isSubmittingQuickSick = true);
+
+    // Rate limit (reuse the same one you already have)
+    if (_lastSubmitTime != null &&
+        DateTime.now().difference(_lastSubmitTime!) < _rateLimitDuration) {
+      _showSnackBar('Please wait a moment before submitting again.', isError: true);
+      setState(() => _isSubmittingQuickSick = false);
+      return;
+    }
+    _lastSubmitTime = DateTime.now();
+
+    final userId = supabase.auth.currentUser?.id;
+    if (userId == null) {
+      _showSnackBar('Not logged in.', isError: true);
+      setState(() => _isSubmittingQuickSick = false);
+      return;
+    }
+
+    // Use the same date for start & end → 1 day
+    final day = DateTime(_quickSickDate.year, _quickSickDate.month, _quickSickDate.day);
+    final daysCount = _calculateWorkdays(day, day);
+
+    if (daysCount > _remainingLeaveDays) {
+      _showSnackBar('Not enough leave days left ($_remainingLeaveDays available).', isError: true);
+      setState(() => _isSubmittingQuickSick = false);
+      return;
+    }
+
+    final utc = day.toUtc().toIso8601String();
+
+    try {
+      await supabase.from('verlof').insert({
+        'start': utc,
+        'end_time': utc,
+        'reason': 'Sick',
+        'verlof_type': 'sick',
+        'verlof_state': 'pending',
+        'user_id': userId,
+        'days_count': daysCount,
+      });
+
+      _showSnackBar('Successfully called in sick for ${DateFormat('EEEE, MMM d').format(day)}');
+      await _fetchRequests();
+      await _fetchLeaveBalance();
+    } catch (e) {
+      _showSnackBar('Failed to submit sick day: $e', isError: true);
+    } finally {
+      setState(() => _isSubmittingQuickSick = false);
+    }
+  }
+
   void _clearForm() {
     _startDateController.clear();
     _endDateController.clear();
@@ -1532,6 +1740,70 @@ class _DesktopLayoutState extends State<DesktopLayout> {
                                   textAlign: TextAlign.center,
                                 ),
                               ),
+                              const SizedBox(height: 16),
+                              Container(
+                                width: double.infinity,
+                                padding: const EdgeInsets.all(20),
+                                decoration: BoxDecoration(
+                                  color: Colors.grey[850],
+                                  borderRadius: BorderRadius.circular(16),
+                                ),
+                                child: Column(
+                                  crossAxisAlignment: CrossAxisAlignment.start,
+                                  children: [
+                                    const Row(
+                                      children: [
+                                        Icon(Icons.sick, color: Colors.red, size: 28),
+                                        SizedBox(width: 12),
+                                        Text(
+                                          'Quick Sick',
+                                          style: TextStyle(
+                                            color: Colors.white,
+                                            fontSize: 20,
+                                            fontWeight: FontWeight.bold,
+                                          ),
+                                        ),
+                                      ],
+                                    ),
+                                    const SizedBox(height: 8),
+                                    const Text(
+                                      'Call in sick for today or pick another date',
+                                      style: TextStyle(color: Colors.white),
+                                    ),
+                                    const SizedBox(height: 16),
+                                    SizedBox(
+                                      width: double.infinity,
+                                      child: ElevatedButton.icon(
+                                        onPressed: _isSubmittingQuickSick
+                                            ? null
+                                            : () async {
+                                                final picked = await showDatePicker(
+                                                  context: context,
+                                                  initialDate: DateTime.now(),
+                                                  firstDate: DateTime.now(),
+                                                  lastDate: DateTime.now().add(const Duration(days: 365)),
+                                                );
+                                                if (picked != null) {
+                                                  setState(() => _quickSickDate = picked);
+                                                  _submitQuickSick();
+                                                }
+                                              },
+                                        icon: _isSubmittingQuickSick
+                                            ? const SizedBox(width: 24, height: 24, child: CircularProgressIndicator(color: Colors.white, strokeWidth: 2))
+                                            : const Icon(Icons.sick, color: Colors.white),
+                                        label: Text(_isSubmittingQuickSick ? 'Submitting...' : 'Call in Sick'),
+                                        style: ElevatedButton.styleFrom(
+                                          backgroundColor: Colors.red,
+                                          foregroundColor: Colors.white,
+                                          padding: const EdgeInsets.symmetric(vertical: 18),
+                                          textStyle: const TextStyle(fontSize: 17, fontWeight: FontWeight.bold),
+                                          shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(12)),
+                                        ),
+                                      ),
+                                    ),
+                                  ],
+                                ),
+                              ),
                             ],
                           ),
                         ),
@@ -1707,6 +1979,7 @@ class _DesktopLayoutState extends State<DesktopLayout> {
                                     child: ElevatedButton(
                                       onPressed: _isSubmitting ? null : _submitRequest,
                                       style: ElevatedButton.styleFrom(
+                                        foregroundColor: Colors.white,
                                         backgroundColor: Colors.red,
                                         padding: const EdgeInsets.symmetric(vertical: 16),
                                         shape: RoundedRectangleBorder(
@@ -1744,18 +2017,33 @@ class _DesktopLayoutState extends State<DesktopLayout> {
                                               ElevatedButton.icon(
                                                 icon: const Icon(Icons.check, size: 18),
                                                 label: const Text('Approve All'),
-                                                style: ElevatedButton.styleFrom(backgroundColor: Colors.green),
+                                                style: ElevatedButton.styleFrom(
+                                                  backgroundColor: Colors.green,
+                                                  foregroundColor: Colors.white,
+                                                ),
                                                 onPressed: () => _bulkUpdateStatus('approve'),
                                               ),
                                               const SizedBox(width: 8),
                                               ElevatedButton.icon(
                                                 icon: const Icon(Icons.close, size: 18),
                                                 label: const Text('Deny All'),
-                                                style: ElevatedButton.styleFrom(backgroundColor: Colors.red),
+                                                style: ElevatedButton.styleFrom(
+                                                  backgroundColor: Colors.red,
+                                                  foregroundColor: Colors.white,
+                                                ),
                                                 onPressed: () => _bulkUpdateStatus('deny'),
                                               ),
                                               const SizedBox(width: 8),
-                                              TextButton(onPressed: () => setState(() => _selectedRequestIds.clear()), child: const Text('Cancel')),
+                                              TextButton(
+                                                onPressed: () => setState(() {
+                                                  _selectedRequestIds.clear();
+                                                  _isBulkMode = false;
+                                                }),
+                                                child: const Text(
+                                                  'Cancel',
+                                                  style: TextStyle(color: Colors.black),
+                                                ),
+                                              ),
                                             ],
                                           ),
                                         ),
