@@ -545,6 +545,16 @@ class _MobileLayoutState extends State<MobileLayout> {
     }
   }
 
+  bool _hasSickRequestToday() {
+  final today = DateTime.now();
+  final todayKey = DateTime(today.year, today.month, today.day);
+
+  return _events[todayKey]?.any((req) =>
+        req['verlof_type'] == 'sick' &&
+        (req['verlof_state'] == 'pending' || req['verlof_state'] == 'approved')
+      ) ?? false;
+  }
+
   void _clearForm() {
     _startDateController.clear();
     _endDateController.clear();
@@ -745,41 +755,25 @@ class _MobileLayoutState extends State<MobileLayout> {
                                             SizedBox(
                                               width: double.infinity,
                                               child: ElevatedButton.icon(
-                                                onPressed: _isSubmittingQuickSick
+                                                onPressed: _isSubmittingQuickSick || _hasSickRequestToday()
                                                     ? null
-                                                    : () async {
-                                                        final picked = await showDatePicker(
-                                                          context: context,
-                                                          initialDate: DateTime.now(),
-                                                          firstDate: DateTime.now().subtract(const Duration(days: 30)),
-                                                          lastDate: DateTime.now().add(const Duration(days: 365)),
-                                                          selectableDayPredicate: (date) => true,
-                                                        );
-                                                        if (picked != null && picked.isAfter(DateTime.now().subtract(const Duration(days: 1)))) {
-                                                          setState(() => _quickSickDate = picked);
-                                                          _submitQuickSick();
-                                                        } else if (picked != null) {
-                                                          _showSnackBar('Cannot select past dates for sick leave.', isError: true);
-                                                        }
-                                                      },
+                                                    : _submitQuickSick,
                                                 icon: _isSubmittingQuickSick
-                                                    ? const SizedBox(
-                                                        width: 20,
-                                                        height: 20,
-                                                        child: CircularProgressIndicator(color: Colors.white, strokeWidth: 2),
-                                                      )
+                                                    ? const SizedBox(width: 20, height: 20, child: CircularProgressIndicator(color: Colors.white, strokeWidth: 2))
                                                     : const Icon(Icons.sick, color: Colors.white),
                                                 label: Text(
-                                                  _isSubmittingQuickSick ? 'Submitting...' : 'Call in Sick Now',
+                                                  _isSubmittingQuickSick
+                                                      ? 'Submitting...'
+                                                      : _hasSickRequestToday()
+                                                          ? 'Already Called In Sick Today'
+                                                          : 'Call in Sick Today',
                                                   style: const TextStyle(fontSize: 17, fontWeight: FontWeight.bold, color: Colors.white),
                                                 ),
                                                 style: ElevatedButton.styleFrom(
                                                   backgroundColor: Colors.red,
                                                   foregroundColor: Colors.white,
                                                   padding: const EdgeInsets.symmetric(vertical: 18),
-                                                  shape: RoundedRectangleBorder(
-                                                    borderRadius: BorderRadius.circular(14),
-                                                  ),
+                                                  shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(14)),
                                                 ),
                                               ),
                                             ),
@@ -1578,6 +1572,16 @@ class _DesktopLayoutState extends State<DesktopLayout> {
     );
   }
 
+  bool _hasSickRequestToday() {
+  final today = DateTime.now();
+  final todayKey = DateTime(today.year, today.month, today.day);
+
+  return _events[todayKey]?.any((req) =>
+        req['verlof_type'] == 'sick' &&
+        (req['verlof_state'] == 'pending' || req['verlof_state'] == 'approved')
+      ) ?? false;
+  }
+
   String _sanitizeInput(String input) =>
       input.replaceAll(RegExp(r'[<>{}]'), '');
 
@@ -1774,30 +1778,25 @@ class _DesktopLayoutState extends State<DesktopLayout> {
                                     SizedBox(
                                       width: double.infinity,
                                       child: ElevatedButton.icon(
-                                        onPressed: _isSubmittingQuickSick
+                                        onPressed: _isSubmittingQuickSick || _hasSickRequestToday()
                                             ? null
-                                            : () async {
-                                                final picked = await showDatePicker(
-                                                  context: context,
-                                                  initialDate: DateTime.now(),
-                                                  firstDate: DateTime.now(),
-                                                  lastDate: DateTime.now().add(const Duration(days: 365)),
-                                                );
-                                                if (picked != null) {
-                                                  setState(() => _quickSickDate = picked);
-                                                  _submitQuickSick();
-                                                }
-                                              },
+                                            : _submitQuickSick,
                                         icon: _isSubmittingQuickSick
-                                            ? const SizedBox(width: 24, height: 24, child: CircularProgressIndicator(color: Colors.white, strokeWidth: 2))
+                                            ? const SizedBox(width: 20, height: 20, child: CircularProgressIndicator(color: Colors.white, strokeWidth: 2))
                                             : const Icon(Icons.sick, color: Colors.white),
-                                        label: Text(_isSubmittingQuickSick ? 'Submitting...' : 'Call in Sick'),
+                                        label: Text(
+                                          _isSubmittingQuickSick
+                                              ? 'Submitting...'
+                                              : _hasSickRequestToday()
+                                                  ? 'Already Called In Sick Today'
+                                                  : 'Call in Sick Today',
+                                          style: const TextStyle(fontSize: 17, fontWeight: FontWeight.bold, color: Colors.white),
+                                        ),
                                         style: ElevatedButton.styleFrom(
                                           backgroundColor: Colors.red,
                                           foregroundColor: Colors.white,
                                           padding: const EdgeInsets.symmetric(vertical: 18),
-                                          textStyle: const TextStyle(fontSize: 17, fontWeight: FontWeight.bold),
-                                          shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(12)),
+                                          shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(14)),
                                         ),
                                       ),
                                     ),
