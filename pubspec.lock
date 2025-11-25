@@ -393,7 +393,7 @@ packages:
     source: hosted
     version: "0.20.2"
   jwt_decode:
-    dependency: transitive
+    dependency: "direct main"
     description:
       name: jwt_decode
       sha256: d2e9f68c052b2225130977429d30f187aa1981d789c76ad104a32243cfdebfbb
