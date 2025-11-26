@@ -52,13 +52,11 @@ class _MobileLayoutState extends State<MobileLayout> {
   final List<String> _verlofTypes = ['sick', 'holiday', 'personal'];
   Set<int> _selectedRequestIds = <int>{};
   bool _isBulkMode = false;
-  late DateTime _quickSickDate;
   bool _isSubmittingQuickSick = false;
 
   @override
   void initState() {
     super.initState();
-    _quickSickDate = DateTime.now();
     _checkManagerAndFetch();
     _fetchLeaveBalance();
   }
@@ -113,43 +111,22 @@ class _MobileLayoutState extends State<MobileLayout> {
   }
 
   Future<void> _fetchLeaveBalance() async {
-    if (!await _validateSession()) {
-      setState(() => _error = 'Session expired. Please log in again.');
-      return;
-    }
-    final userId = supabase.auth.currentUser?.id;
-    if (userId == null) {
-      setState(() => _error = 'Not logged in.');
-      return;
-    }
     try {
       final response = await supabase
-          .from('leave_balance')
-          .select('total_days, used_days')
-          .eq('user_id', userId)
-          .eq('year', DateTime.now().year)
-          .maybeSingle();
-      if (response != null) {
-        final total = response['total_days'] as int? ?? 28;
-        final used = response['used_days'] as int? ?? 0;
-        setState(() {
-          _remainingLeaveDays = total - used;
-          _error = null;
-        });
-      } else {
-        await supabase.from('leave_balance').insert({
-          'user_id': userId,
-          'total_days': 28,
-          'used_days': 0,
-          'year': DateTime.now().year,
-        });
-        setState(() => _remainingLeaveDays = 28);
-      }
+          .from('my_leave_balance')
+          .select('remaining_days')
+          .single();
+
+      setState(() {
+        _remainingLeaveDays = response['remaining_days'] as int;
+        _error = null;
+      });
     } catch (e) {
-      setState(() => _error = 'Failed to load leave balance.');
+      print('Balance fetch error: $e');
+      setState(() => _error = 'Failed to load leave balance');
     }
   }
-
+  
   Future<void> _fetchRequests() async {
     setState(() => _isLoadingRequests = true);
     if (!await _validateSession()) {
@@ -277,13 +254,6 @@ class _MobileLayoutState extends State<MobileLayout> {
       return;
     }
     final daysRequested = _calculateWorkdays(startDt, endDt);
-    if (daysRequested > _remainingLeaveDays) {
-      _showSnackBar(
-          'Not enough leave days ($_remainingLeaveDays available).',
-          isError: true);
-      setState(() => _isSubmitting = false);
-      return;
-    }
     final startUtc =
         DateTime(startDt.year, startDt.month, startDt.day).toUtc().toIso8601String();
     final endUtc =
@@ -315,13 +285,6 @@ class _MobileLayoutState extends State<MobileLayout> {
   }
 
   Future<void> _deleteRequest(dynamic requestId) async {
-    if (_lastDeleteTime != null &&
-        DateTime.now().difference(_lastDeleteTime!) < _rateLimitDuration) {
-      _showSnackBar('Please wait before deleting again.', isError: true);
-      return;
-    }
-    _lastDeleteTime = DateTime.now();
-
     final confirmed = await showDialog<bool>(
       context: context,
       builder: (_) => AlertDialog(
@@ -339,71 +302,20 @@ class _MobileLayoutState extends State<MobileLayout> {
       final id = requestId is int ? requestId : int.tryParse(requestId.toString());
       if (id == null) throw 'Invalid ID';
 
-      final req = _requests.firstWhere((r) => r['id'] == id);
-      final wasApproved = req['verlof_state'] == 'approved';
-      final days = (req['days_count'] as num?)?.toInt() ?? 0;
-      final userId = req['user_id'] as String;
-
-      // Delete first
       await supabase.from('verlof').delete().eq('id', id);
-
-      // Only give back days if it was approved
-      if (wasApproved && days > 0) {
-        await supabase.rpc('decrement_leave_used', params: {
-          'p_user_id': userId,
-          'p_days': days,
-        });
-      }
 
       _showSnackBar('Request deleted');
       await _fetchRequests();
-      if (userId == supabase.auth.currentUser?.id) {
-        await _fetchLeaveBalance();
-      }
+      await _fetchLeaveBalance();
     } catch (e) {
-      _showSnackBar('Failed to delete request', isError: true);
+      _showSnackBar('Failed to delete', isError: true);
     }
   }
-    
+  
   Future<void> _updateRequestStatus(int id, String action) async {
-    print('>>> APPROVE CLICKED for request ID: $id | Action: $action');
-
+    final newState = action == 'approve' ? 'approved' : 'denied';
+    
     try {
-      // ←←← THIS IS THE FIX — FETCH FRESH DATA FROM DB ←←←
-      final freshResponse = await supabase
-          .from('verlof')
-          .select()
-          .eq('id', id)
-          .single();
-
-      final userId = freshResponse['user_id'] as String;
-      final days = (freshResponse['days_count'] as num?)?.toInt() ?? 0;
-      final currentState = freshResponse['verlof_state'] as String;
-      final newState = switch (action) {
-        'approve' => 'approved',
-        'deny' => 'denied',
-        _ => 'pending',
-      };
-
-      print('FRESH DATA → user: $userId | days: $days | current: $currentState → new: $newState');
-
-      if (currentState != newState) {
-        if (newState == 'approved' && currentState != 'approved') {
-          print('CALLING increment_leave_used($userId, $days)');
-          await supabase.rpc('increment_leave_used', params: {
-            'p_user_id': userId,
-            'p_days': days,
-          });
-          print('increment_leave_used SUCCESS');
-        } else if (currentState == 'approved' && newState != 'approved') {
-          print('CALLING decrement_leave_used($userId, $days)');
-          await supabase.rpc('decrement_leave_used', params: {
-            'p_user_id': userId,
-            'p_days': days,
-          });
-        }
-      }
-
       await supabase
           .from('verlof')
           .update({'verlof_state': newState})
@@ -411,73 +323,58 @@ class _MobileLayoutState extends State<MobileLayout> {
 
       _showSnackBar('Request $newState!');
       await _fetchRequests();
-      if (userId == supabase.auth.currentUser?.id) {
-        await _fetchLeaveBalance();
-      }
-    } catch (e, st) {
-      print('UPDATE FAILED: $e');
-      print(st);
+      await _fetchLeaveBalance();
+    } catch (e) {
       _showSnackBar('Failed: $e', isError: true);
     }
   }
-    
+  
   Future<void> _bulkUpdateStatus(String action) async {
-  if (_selectedRequestIds.isEmpty) {
-    _showSnackBar('No requests selected', isError: true);
-    return;
-  }
-
-  final confirmed = await showDialog<bool>(
-    context: context,
-    builder: (_) => AlertDialog(
-      title: Text('Bulk ${action == 'approve' ? 'Approve' : 'Deny'}'),
-      content: Text('Update ${_selectedRequestIds.length} request(s)?'),
-      actions: [
-        TextButton(onPressed: () => Navigator.pop(context, false), child: const Text('Cancel')),
-        TextButton(
-          onPressed: () => Navigator.pop(context, true),
-          child: Text(action == 'approve' ? 'Approve All' : 'Deny All', style: const TextStyle(color: Colors.red)),
-        ),
-      ],
-    ),
-  );
-
-  if (confirmed != true) return;
-
-  setState(() => _isLoadingRequests = true);
-
-  final newState = action == 'approve' ? 'approved' : 'denied';
-
-  try {
-    for (final id in _selectedRequestIds) {
-      final fresh = await supabase.from('verlof').select().eq('id', id).single();
-      final userId = fresh['user_id'] as String;
-      final days = (fresh['days_count'] as num?)?.toInt() ?? 0;
-      final current = fresh['verlof_state'] as String;
-
-      if (current != newState) {
-        if (newState == 'approved' && current != 'approved') {
-          await supabase.rpc('increment_leave_used', params: {'p_user_id': userId, 'p_days': days});
-        } else if (current == 'approved' && newState != 'approved') {
-          await supabase.rpc('decrement_leave_used', params: {'p_user_id': userId, 'p_days': days});
-        }
-      }
-      await supabase.from('verlof').update({'verlof_state': newState}).eq('id', id);
+    if (_selectedRequestIds.isEmpty) {
+      _showSnackBar('No requests selected', isError: true);
+      return;
     }
 
-    _showSnackBar('Bulk ${action == 'approve' ? 'approved' : 'denied'} ${_selectedRequestIds.length} requests!');
-    setState(() {
-      _selectedRequestIds.clear();
-      _isBulkMode = false;
-    });
-    await _fetchRequests();
-    _fetchLeaveBalance();
-  } catch (e) {
-    _showSnackBar('Bulk action failed: $e', isError: true);
-  } finally {
-    setState(() => _isLoadingRequests = false);
+    final confirmed = await showDialog<bool>(
+      context: context,
+      builder: (_) => AlertDialog(
+        title: Text('Bulk ${action == 'approve' ? 'Approve' : 'Deny'}'),
+        content: Text('Update ${_selectedRequestIds.length} request(s)?'),
+        actions: [
+          TextButton(onPressed: () => Navigator.pop(context, false), child: const Text('Cancel')),
+          TextButton(
+            onPressed: () => Navigator.pop(context, true),
+            child: Text(action == 'approve' ? 'Approve All' : 'Deny All', style: const TextStyle(color: Colors.red)),
+          ),
+        ],
+      ),
+    );
+
+    if (confirmed != true) return;
+
+    setState(() => _isLoadingRequests = true);
+    final newState = action == 'approve' ? 'approved' : 'denied';
+
+    try {
+      // ONE SINGLE BULK UPDATE — DB trigger does ALL the balance logic
+      await supabase
+          .from('verlof')
+          .update({'verlof_state': newState})
+          .inFilter('id', _selectedRequestIds.toList());
+
+      _showSnackBar('Bulk ${action == 'approve' ? 'approved' : 'denied'} ${_selectedRequestIds.length} requests!');
+      setState(() {
+        _selectedRequestIds.clear();
+        _isBulkMode = false;
+      });
+      await _fetchRequests();
+      await _fetchLeaveBalance();
+    } catch (e) {
+      _showSnackBar('Bulk action failed: $e', isError: true);
+    } finally {
+      setState(() => _isLoadingRequests = false);
+    }
   }
-}
   
   Future<void> _pickDate(TextEditingController controller) async {
     final picked = await showDatePicker(
@@ -496,7 +393,7 @@ class _MobileLayoutState extends State<MobileLayout> {
 
     setState(() => _isSubmittingQuickSick = true);
 
-    // Rate limit (reuse the same one you already have)
+    // Rate limiting
     if (_lastSubmitTime != null &&
         DateTime.now().difference(_lastSubmitTime!) < _rateLimitDuration) {
       _showSnackBar('Please wait a moment before submitting again.', isError: true);
@@ -512,22 +409,33 @@ class _MobileLayoutState extends State<MobileLayout> {
       return;
     }
 
-    // Use the same date for start & end → 1 day
-    final day = DateTime(_quickSickDate.year, _quickSickDate.month, _quickSickDate.day);
-    final daysCount = _calculateWorkdays(day, day);
+    // TODAY only - normalized to date only (ignore time)
+    final today = DateTime.now();
+    final todayDateOnly = DateTime(today.year, today.month, today.day);
+    final todayUtc = todayDateOnly.toUtc().toIso8601String();
 
-    if (daysCount > _remainingLeaveDays) {
-      _showSnackBar('Not enough leave days left ($_remainingLeaveDays available).', isError: true);
+    // Check for existing sick request today (pending or approved)
+    final existing = await supabase
+        .from('verlof')
+        .select('id')
+        .eq('user_id', userId)
+        .eq('verlof_type', 'sick')
+        .inFilter('verlof_state', ['pending', 'approved'])
+        .gte('start', todayUtc)
+        .lte('start', todayUtc.substring(0, 10) + 'T23:59:59.999Z');
+
+    if (existing.isNotEmpty) {
+      _showSnackBar('You have already called in sick for today.', isError: true);
       setState(() => _isSubmittingQuickSick = false);
       return;
     }
 
-    final utc = day.toUtc().toIso8601String();
+    final daysCount = _calculateWorkdays(todayDateOnly, todayDateOnly);
 
     try {
       await supabase.from('verlof').insert({
-        'start': utc,
-        'end_time': utc,
+        'start': todayUtc,
+        'end_time': todayUtc,
         'reason': 'Sick',
         'verlof_type': 'sick',
         'verlof_state': 'pending',
@@ -535,7 +443,7 @@ class _MobileLayoutState extends State<MobileLayout> {
         'days_count': daysCount,
       });
 
-      _showSnackBar('Successfully called in sick for ${DateFormat('EEEE, MMM d').format(day)}');
+      _showSnackBar('Called in sick for today');
       await _fetchRequests();
       await _fetchLeaveBalance();
     } catch (e) {
@@ -544,17 +452,7 @@ class _MobileLayoutState extends State<MobileLayout> {
       setState(() => _isSubmittingQuickSick = false);
     }
   }
-
-  bool _hasSickRequestToday() {
-  final today = DateTime.now();
-  final todayKey = DateTime(today.year, today.month, today.day);
-
-  return _events[todayKey]?.any((req) =>
-        req['verlof_type'] == 'sick' &&
-        (req['verlof_state'] == 'pending' || req['verlof_state'] == 'approved')
-      ) ?? false;
-  }
-
+  
   void _clearForm() {
     _startDateController.clear();
     _endDateController.clear();
@@ -755,18 +653,14 @@ class _MobileLayoutState extends State<MobileLayout> {
                                             SizedBox(
                                               width: double.infinity,
                                               child: ElevatedButton.icon(
-                                                onPressed: _isSubmittingQuickSick || _hasSickRequestToday()
-                                                    ? null
-                                                    : _submitQuickSick,
+                                                onPressed: _isSubmittingQuickSick ? null : _submitQuickSick,
                                                 icon: _isSubmittingQuickSick
                                                     ? const SizedBox(width: 20, height: 20, child: CircularProgressIndicator(color: Colors.white, strokeWidth: 2))
                                                     : const Icon(Icons.sick, color: Colors.white),
                                                 label: Text(
                                                   _isSubmittingQuickSick
                                                       ? 'Submitting...'
-                                                      : _hasSickRequestToday()
-                                                          ? 'Already Called In Sick Today'
-                                                          : 'Call in Sick Today',
+                                                      : 'Call in Sick Today',
                                                   style: const TextStyle(fontSize: 17, fontWeight: FontWeight.bold, color: Colors.white),
                                                 ),
                                                 style: ElevatedButton.styleFrom(
@@ -1068,13 +962,11 @@ class _DesktopLayoutState extends State<DesktopLayout> {
   final List<String> _verlofTypes = ['sick', 'holiday', 'personal'];
   Set<int> _selectedRequestIds = <int>{};
   bool _isBulkMode = false;
-  late DateTime _quickSickDate;
   bool _isSubmittingQuickSick = false;
 
   @override
   void initState() {
     super.initState();
-    _quickSickDate = DateTime.now();
     _checkManagerAndFetch();
     _fetchLeaveBalance();
   }
@@ -1129,43 +1021,22 @@ class _DesktopLayoutState extends State<DesktopLayout> {
   }
 
   Future<void> _fetchLeaveBalance() async {
-    if (!await _validateSession()) {
-      setState(() => _error = 'Session expired. Please log in again.');
-      return;
-    }
-    final userId = supabase.auth.currentUser?.id;
-    if (userId == null) {
-      setState(() => _error = 'Not logged in.');
-      return;
-    }
     try {
       final response = await supabase
-          .from('leave_balance')
-          .select('total_days, used_days')
-          .eq('user_id', userId)
-          .eq('year', DateTime.now().year)
-          .maybeSingle();
-      if (response != null) {
-        final total = response['total_days'] as int? ?? 28;
-        final used = response['used_days'] as int? ?? 0;
-        setState(() {
-          _remainingLeaveDays = total - used;
-          _error = null;
-        });
-      } else {
-        await supabase.from('leave_balance').insert({
-          'user_id': userId,
-          'total_days': 28,
-          'used_days': 0,
-          'year': DateTime.now().year,
-        });
-        setState(() => _remainingLeaveDays = 28);
-      }
+          .from('my_leave_balance')
+          .select('remaining_days')
+          .single();
+
+      setState(() {
+        _remainingLeaveDays = response['remaining_days'] as int;
+        _error = null;
+      });
     } catch (e) {
-      setState(() => _error = 'Failed to load leave balance.');
+      print('Balance fetch error: $e');
+      setState(() => _error = 'Failed to load leave balance');
     }
   }
-
+  
   Future<void> _fetchRequests() async {
     setState(() => _isLoadingRequests = true);
     if (!await _validateSession()) {
@@ -1291,13 +1162,6 @@ class _DesktopLayoutState extends State<DesktopLayout> {
       return;
     }
     final daysRequested = _calculateWorkdays(startDt, endDt);
-    if (daysRequested > _remainingLeaveDays) {
-      _showSnackBar(
-          'Not enough leave days ($_remainingLeaveDays available).',
-          isError: true);
-      setState(() => _isSubmitting = false);
-      return;
-    }
     final startUtc =
         DateTime(startDt.year, startDt.month, startDt.day).toUtc().toIso8601String();
     final endUtc =
@@ -1329,92 +1193,37 @@ class _DesktopLayoutState extends State<DesktopLayout> {
   }
 
   Future<void> _deleteRequest(dynamic requestId) async {
-    if (_lastDeleteTime != null &&
-        DateTime.now().difference(_lastDeleteTime!) < _rateLimitDuration) {
-      _showSnackBar('Please wait before deleting again.', isError: true);
-      return;
-    }
-    _lastDeleteTime = DateTime.now();
-    final confirm = await showDialog<bool>(
+    final confirmed = await showDialog<bool>(
       context: context,
       builder: (_) => AlertDialog(
         title: const Text('Delete Request'),
-        content: const Text('This cannot be undone. Proceed?'),
+        content: const Text('This cannot be undone.'),
         actions: [
           TextButton(onPressed: () => Navigator.pop(context, false), child: const Text('Cancel')),
           TextButton(onPressed: () => Navigator.pop(context, true), child: const Text('Delete', style: TextStyle(color: Colors.red))),
         ],
       ),
     );
-    if (confirm != true) return;
+    if (confirmed != true) return;
+
     try {
-      final id = requestId is int
-          ? requestId
-          : (requestId is String ? int.tryParse(requestId) : null);
-      if (id == null) throw 'Invalid request ID';
-      final req = _requests.firstWhere((r) => r['id'] == id, orElse: () => throw 'Request not found');
-      final wasApproved = req['verlof_state'] == 'approved';
-      final daysRaw = req['days_count'];
-      final days = (daysRaw is num) ? daysRaw.toInt() : int.tryParse(daysRaw.toString()) ?? 0;
-      final userId = req['user_id'] as String?;
-      if (userId == null) throw 'Missing user ID';
+      final id = requestId is int ? requestId : int.tryParse(requestId.toString());
+      if (id == null) throw 'Invalid ID';
+
       await supabase.from('verlof').delete().eq('id', id);
-      if (wasApproved && days > 0) {
-          await supabase.rpc('decrement_leave_used', params: {
-            'p_user_id': userId,
-            'p_days': days,
-          });
-      }
-      _showSnackBar('Request deleted successfully.');
+
+      _showSnackBar('Request deleted');
       await _fetchRequests();
-      if (userId == supabase.auth.currentUser?.id) {
-        await _fetchLeaveBalance();
-      }
+      await _fetchLeaveBalance(); 
     } catch (e) {
-      print('Delete error: $e');
-      _showSnackBar('Failed to delete request: $e', isError: true);
+      _showSnackBar('Failed to delete', isError: true);
     }
   }
-
+  
   Future<void> _updateRequestStatus(int id, String action) async {
-    print('>>> APPROVE CLICKED for request ID: $id | Action: $action');
-
+    final newState = action == 'approve' ? 'approved' : 'denied';
+    
     try {
-      // ←←← THIS IS THE FIX — FETCH FRESH DATA FROM DB ←←←
-      final freshResponse = await supabase
-          .from('verlof')
-          .select()
-          .eq('id', id)
-          .single();
-
-      final userId = freshResponse['user_id'] as String;
-      final days = (freshResponse['days_count'] as num?)?.toInt() ?? 0;
-      final currentState = freshResponse['verlof_state'] as String;
-      final newState = switch (action) {
-        'approve' => 'approved',
-        'deny' => 'denied',
-        _ => 'pending',
-      };
-
-      print('FRESH DATA → user: $userId | days: $days | current: $currentState → new: $newState');
-
-      if (currentState != newState) {
-        if (newState == 'approved' && currentState != 'approved') {
-          print('CALLING increment_leave_used($userId, $days)');
-          await supabase.rpc('increment_leave_used', params: {
-            'p_user_id': userId,
-            'p_days': days,
-          });
-          print('increment_leave_used SUCCESS');
-        } else if (currentState == 'approved' && newState != 'approved') {
-          print('CALLING decrement_leave_used($userId, $days)');
-          await supabase.rpc('decrement_leave_used', params: {
-            'p_user_id': userId,
-            'p_days': days,
-          });
-        }
-      }
-
       await supabase
           .from('verlof')
           .update({'verlof_state': newState})
@@ -1422,12 +1231,8 @@ class _DesktopLayoutState extends State<DesktopLayout> {
 
       _showSnackBar('Request $newState!');
       await _fetchRequests();
-      if (userId == supabase.auth.currentUser?.id) {
-        await _fetchLeaveBalance();
-      }
-    } catch (e, st) {
-      print('UPDATE FAILED: $e');
-      print(st);
+      await _fetchLeaveBalance(); // auto-updates via DB trigger
+    } catch (e) {
       _showSnackBar('Failed: $e', isError: true);
     }
   }
@@ -1456,25 +1261,14 @@ class _DesktopLayoutState extends State<DesktopLayout> {
     if (confirmed != true) return;
 
     setState(() => _isLoadingRequests = true);
-
     final newState = action == 'approve' ? 'approved' : 'denied';
 
     try {
-      for (final id in _selectedRequestIds) {
-        final fresh = await supabase.from('verlof').select().eq('id', id).single();
-        final userId = fresh['user_id'] as String;
-        final days = (fresh['days_count'] as num?)?.toInt() ?? 0;
-        final current = fresh['verlof_state'] as String;
-
-        if (current != newState) {
-          if (newState == 'approved' && current != 'approved') {
-            await supabase.rpc('increment_leave_used', params: {'p_user_id': userId, 'p_days': days});
-          } else if (current == 'approved' && newState != 'approved') {
-            await supabase.rpc('decrement_leave_used', params: {'p_user_id': userId, 'p_days': days});
-          }
-        }
-        await supabase.from('verlof').update({'verlof_state': newState}).eq('id', id);
-      }
+      // ONE SINGLE BULK UPDATE — DB trigger does ALL the balance logic
+      await supabase
+          .from('verlof')
+          .update({'verlof_state': newState})
+          .inFilter('id', _selectedRequestIds.toList());
 
       _showSnackBar('Bulk ${action == 'approve' ? 'approved' : 'denied'} ${_selectedRequestIds.length} requests!');
       setState(() {
@@ -1482,7 +1276,7 @@ class _DesktopLayoutState extends State<DesktopLayout> {
         _isBulkMode = false;
       });
       await _fetchRequests();
-      _fetchLeaveBalance();
+      await _fetchLeaveBalance();
     } catch (e) {
       _showSnackBar('Bulk action failed: $e', isError: true);
     } finally {
@@ -1507,7 +1301,7 @@ class _DesktopLayoutState extends State<DesktopLayout> {
 
     setState(() => _isSubmittingQuickSick = true);
 
-    // Rate limit (reuse the same one you already have)
+    // Rate limiting
     if (_lastSubmitTime != null &&
         DateTime.now().difference(_lastSubmitTime!) < _rateLimitDuration) {
       _showSnackBar('Please wait a moment before submitting again.', isError: true);
@@ -1523,22 +1317,33 @@ class _DesktopLayoutState extends State<DesktopLayout> {
       return;
     }
 
-    // Use the same date for start & end → 1 day
-    final day = DateTime(_quickSickDate.year, _quickSickDate.month, _quickSickDate.day);
-    final daysCount = _calculateWorkdays(day, day);
+    // TODAY only - normalized to date only (ignore time)
+    final today = DateTime.now();
+    final todayDateOnly = DateTime(today.year, today.month, today.day);
+    final todayUtc = todayDateOnly.toUtc().toIso8601String();
 
-    if (daysCount > _remainingLeaveDays) {
-      _showSnackBar('Not enough leave days left ($_remainingLeaveDays available).', isError: true);
+    // Check for existing sick request today (pending or approved)
+    final existing = await supabase
+        .from('verlof')
+        .select('id')
+        .eq('user_id', userId)
+        .eq('verlof_type', 'sick')
+        .inFilter('verlof_state', ['pending', 'approved'])
+        .gte('start', todayUtc)
+        .lte('start', todayUtc.substring(0, 10) + 'T23:59:59.999Z');
+
+    if (existing.isNotEmpty) {
+      _showSnackBar('You have already called in sick for today.', isError: true);
       setState(() => _isSubmittingQuickSick = false);
       return;
     }
 
-    final utc = day.toUtc().toIso8601String();
+    final daysCount = _calculateWorkdays(todayDateOnly, todayDateOnly);
 
     try {
       await supabase.from('verlof').insert({
-        'start': utc,
-        'end_time': utc,
+        'start': todayUtc,
+        'end_time': todayUtc,
         'reason': 'Sick',
         'verlof_type': 'sick',
         'verlof_state': 'pending',
@@ -1546,7 +1351,7 @@ class _DesktopLayoutState extends State<DesktopLayout> {
         'days_count': daysCount,
       });
 
-      _showSnackBar('Successfully called in sick for ${DateFormat('EEEE, MMM d').format(day)}');
+      _showSnackBar('Called in sick for today');
       await _fetchRequests();
       await _fetchLeaveBalance();
     } catch (e) {
@@ -1555,7 +1360,7 @@ class _DesktopLayoutState extends State<DesktopLayout> {
       setState(() => _isSubmittingQuickSick = false);
     }
   }
-
+  
   void _clearForm() {
     _startDateController.clear();
     _endDateController.clear();
@@ -1570,16 +1375,6 @@ class _DesktopLayoutState extends State<DesktopLayout> {
         backgroundColor: isError ? Colors.red : Colors.green,
       ),
     );
-  }
-
-  bool _hasSickRequestToday() {
-  final today = DateTime.now();
-  final todayKey = DateTime(today.year, today.month, today.day);
-
-  return _events[todayKey]?.any((req) =>
-        req['verlof_type'] == 'sick' &&
-        (req['verlof_state'] == 'pending' || req['verlof_state'] == 'approved')
-      ) ?? false;
   }
 
   String _sanitizeInput(String input) =>
@@ -1778,18 +1573,14 @@ class _DesktopLayoutState extends State<DesktopLayout> {
                                     SizedBox(
                                       width: double.infinity,
                                       child: ElevatedButton.icon(
-                                        onPressed: _isSubmittingQuickSick || _hasSickRequestToday()
-                                            ? null
-                                            : _submitQuickSick,
+                                      onPressed: _isSubmittingQuickSick ? null : _submitQuickSick,
                                         icon: _isSubmittingQuickSick
                                             ? const SizedBox(width: 20, height: 20, child: CircularProgressIndicator(color: Colors.white, strokeWidth: 2))
                                             : const Icon(Icons.sick, color: Colors.white),
                                         label: Text(
                                           _isSubmittingQuickSick
                                               ? 'Submitting...'
-                                              : _hasSickRequestToday()
-                                                  ? 'Already Called In Sick Today'
-                                                  : 'Call in Sick Today',
+                                              : 'Call in Sick Today',
                                           style: const TextStyle(fontSize: 17, fontWeight: FontWeight.bold, color: Colors.white),
                                         ),
                                         style: ElevatedButton.styleFrom(
