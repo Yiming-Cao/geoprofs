@@ -50,10 +50,15 @@ class _MobileLayoutState extends State<MobileLayout> {
   bool _isManager = false;
   String? _selectedVerlofType;
   final List<String> _verlofTypes = ['sick', 'holiday', 'personal'];
+  Set<int> _selectedRequestIds = <int>{};
+  bool _isBulkMode = false;
+  late DateTime _quickSickDate;
+  bool _isSubmittingQuickSick = false;
 
   @override
   void initState() {
     super.initState();
+    _quickSickDate = DateTime.now();
     _checkManagerAndFetch();
     _fetchLeaveBalance();
   }
@@ -218,13 +223,15 @@ class _MobileLayoutState extends State<MobileLayout> {
 
   int _calculateWorkdays(DateTime start, DateTime end) {
     int days = 0;
-    var cur = DateTime(start.year, start.month, start.day);
+    var current = DateTime(start.year, start.month, start.day);
     final endDate = DateTime(end.year, end.month, end.day);
-    while (!cur.isAfter(endDate)) {
-      if (cur.weekday != DateTime.saturday && cur.weekday != DateTime.sunday) {
+    
+    while (!current.isAfter(endDate)) {
+      final weekday = current.weekday;
+      if (weekday != DateTime.saturday && weekday != DateTime.sunday) {
         days++;
       }
-      cur = cur.add(const Duration(days: 1));
+      current = current.add(const Duration(days: 1));
     }
     return days;
   }
@@ -314,87 +321,164 @@ class _MobileLayoutState extends State<MobileLayout> {
       return;
     }
     _lastDeleteTime = DateTime.now();
-    final confirm = await showDialog<bool>(
+
+    final confirmed = await showDialog<bool>(
       context: context,
       builder: (_) => AlertDialog(
         title: const Text('Delete Request'),
-        content: const Text('This cannot be undone. Proceed?'),
+        content: const Text('This cannot be undone.'),
         actions: [
           TextButton(onPressed: () => Navigator.pop(context, false), child: const Text('Cancel')),
           TextButton(onPressed: () => Navigator.pop(context, true), child: const Text('Delete', style: TextStyle(color: Colors.red))),
         ],
       ),
     );
-    if (confirm != true) return;
+    if (confirmed != true) return;
+
     try {
-      final id = requestId is int
-          ? requestId
-          : (requestId is String ? int.tryParse(requestId) : null);
-      if (id == null) throw 'Invalid request ID';
-      final req = _requests.firstWhere((r) => r['id'] == id, orElse: () => throw 'Request not found');
+      final id = requestId is int ? requestId : int.tryParse(requestId.toString());
+      if (id == null) throw 'Invalid ID';
+
+      final req = _requests.firstWhere((r) => r['id'] == id);
       final wasApproved = req['verlof_state'] == 'approved';
       final days = (req['days_count'] as num?)?.toInt() ?? 0;
-      final userId = req['user_id'] as String?;
-      if (userId == null) throw 'Missing user ID';
+      final userId = req['user_id'] as String;
+
+      // Delete first
       await supabase.from('verlof').delete().eq('id', id);
+
+      // Only give back days if it was approved
       if (wasApproved && days > 0) {
-        try {
-          await supabase.rpc('decrement_leave_used', params: {
-            'p_user_id': userId,
-            'p_days': days,
-          });
-        } catch (rpcError) {
-          print('RPC decrement failed: $rpcError');
-          if (userId == supabase.auth.currentUser?.id) {
-            await _fetchLeaveBalance();
-          }
-          _showSnackBar('Warning: Leave balance may be out of sync.', isError: true);
-        }
+        await supabase.rpc('decrement_leave_used', params: {
+          'p_user_id': userId,
+          'p_days': days,
+        });
       }
-      _showSnackBar('Request deleted successfully.');
+
+      _showSnackBar('Request deleted');
       await _fetchRequests();
       if (userId == supabase.auth.currentUser?.id) {
         await _fetchLeaveBalance();
       }
     } catch (e) {
-      print('Delete error: $e');
-      _showSnackBar('Failed to delete request: $e', isError: true);
+      _showSnackBar('Failed to delete request', isError: true);
     }
   }
+    
+  Future<void> _updateRequestStatus(int id, String action) async {
+    print('>>> APPROVE CLICKED for request ID: $id | Action: $action');
 
-  Future<void> _updateRequestStatus(int id, String state) async {
     try {
-      final req = _requests.firstWhere((r) => r['id'] == id);
-      final userId = req['user_id'];
-      final days = req['days_count'] as int;
+      // ←←← THIS IS THE FIX — FETCH FRESH DATA FROM DB ←←←
+      final freshResponse = await supabase
+          .from('verlof')
+          .select()
+          .eq('id', id)
+          .single();
 
-      final newState = state == 'approve' ? 'approved'
-                     : state == 'deny'   ? 'denied'
-                     : state;
+      final userId = freshResponse['user_id'] as String;
+      final days = (freshResponse['days_count'] as num?)?.toInt() ?? 0;
+      final currentState = freshResponse['verlof_state'] as String;
+      final newState = switch (action) {
+        'approve' => 'approved',
+        'deny' => 'denied',
+        _ => 'pending',
+      };
+
+      print('FRESH DATA → user: $userId | days: $days | current: $currentState → new: $newState');
+
+      if (currentState != newState) {
+        if (newState == 'approved' && currentState != 'approved') {
+          print('CALLING increment_leave_used($userId, $days)');
+          await supabase.rpc('increment_leave_used', params: {
+            'p_user_id': userId,
+            'p_days': days,
+          });
+          print('increment_leave_used SUCCESS');
+        } else if (currentState == 'approved' && newState != 'approved') {
+          print('CALLING decrement_leave_used($userId, $days)');
+          await supabase.rpc('decrement_leave_used', params: {
+            'p_user_id': userId,
+            'p_days': days,
+          });
+        }
+      }
 
       await supabase
           .from('verlof')
           .update({'verlof_state': newState})
           .eq('id', id);
 
-      if (newState == 'approved') {
-        await supabase.rpc('increment_leave_used', params: {
-          'p_user_id': userId,
-          'p_days': days,
-        });
-      }
-
-      _showSnackBar('Request ${newState == 'approved' ? 'approved' : newState == 'denied' ? 'denied' : 'set to pending'}.');
-      
+      _showSnackBar('Request $newState!');
       await _fetchRequests();
       if (userId == supabase.auth.currentUser?.id) {
         await _fetchLeaveBalance();
       }
-    } catch (e) {
-      _showSnackBar('Failed to update: $e', isError: true);
+    } catch (e, st) {
+      print('UPDATE FAILED: $e');
+      print(st);
+      _showSnackBar('Failed: $e', isError: true);
     }
   }
+    
+  Future<void> _bulkUpdateStatus(String action) async {
+  if (_selectedRequestIds.isEmpty) {
+    _showSnackBar('No requests selected', isError: true);
+    return;
+  }
 
+  final confirmed = await showDialog<bool>(
+    context: context,
+    builder: (_) => AlertDialog(
+      title: Text('Bulk ${action == 'approve' ? 'Approve' : 'Deny'}'),
+      content: Text('Update ${_selectedRequestIds.length} request(s)?'),
+      actions: [
+        TextButton(onPressed: () => Navigator.pop(context, false), child: const Text('Cancel')),
+        TextButton(
+          onPressed: () => Navigator.pop(context, true),
+          child: Text(action == 'approve' ? 'Approve All' : 'Deny All', style: const TextStyle(color: Colors.red)),
+        ),
+      ],
+    ),
+  );
+
+  if (confirmed != true) return;
+
+  setState(() => _isLoadingRequests = true);
+
+  final newState = action == 'approve' ? 'approved' : 'denied';
+
+  try {
+    for (final id in _selectedRequestIds) {
+      final fresh = await supabase.from('verlof').select().eq('id', id).single();
+      final userId = fresh['user_id'] as String;
+      final days = (fresh['days_count'] as num?)?.toInt() ?? 0;
+      final current = fresh['verlof_state'] as String;
+
+      if (current != newState) {
+        if (newState == 'approved' && current != 'approved') {
+          await supabase.rpc('increment_leave_used', params: {'p_user_id': userId, 'p_days': days});
+        } else if (current == 'approved' && newState != 'approved') {
+          await supabase.rpc('decrement_leave_used', params: {'p_user_id': userId, 'p_days': days});
+        }
+      }
+      await supabase.from('verlof').update({'verlof_state': newState}).eq('id', id);
+    }
+
+    _showSnackBar('Bulk ${action == 'approve' ? 'approved' : 'denied'} ${_selectedRequestIds.length} requests!');
+    setState(() {
+      _selectedRequestIds.clear();
+      _isBulkMode = false;
+    });
+    await _fetchRequests();
+    _fetchLeaveBalance();
+  } catch (e) {
+    _showSnackBar('Bulk action failed: $e', isError: true);
+  } finally {
+    setState(() => _isLoadingRequests = false);
+  }
+}
+  
   Future<void> _pickDate(TextEditingController controller) async {
     final picked = await showDatePicker(
       context: context,
@@ -405,6 +489,70 @@ class _MobileLayoutState extends State<MobileLayout> {
     if (picked != null) {
       controller.text = DateFormat('yyyy-MM-dd').format(picked);
     }
+  }
+
+  Future<void> _submitQuickSick() async {
+    if (_isSubmittingQuickSick) return;
+
+    setState(() => _isSubmittingQuickSick = true);
+
+    // Rate limit (reuse the same one you already have)
+    if (_lastSubmitTime != null &&
+        DateTime.now().difference(_lastSubmitTime!) < _rateLimitDuration) {
+      _showSnackBar('Please wait a moment before submitting again.', isError: true);
+      setState(() => _isSubmittingQuickSick = false);
+      return;
+    }
+    _lastSubmitTime = DateTime.now();
+
+    final userId = supabase.auth.currentUser?.id;
+    if (userId == null) {
+      _showSnackBar('Not logged in.', isError: true);
+      setState(() => _isSubmittingQuickSick = false);
+      return;
+    }
+
+    // Use the same date for start & end → 1 day
+    final day = DateTime(_quickSickDate.year, _quickSickDate.month, _quickSickDate.day);
+    final daysCount = _calculateWorkdays(day, day);
+
+    if (daysCount > _remainingLeaveDays) {
+      _showSnackBar('Not enough leave days left ($_remainingLeaveDays available).', isError: true);
+      setState(() => _isSubmittingQuickSick = false);
+      return;
+    }
+
+    final utc = day.toUtc().toIso8601String();
+
+    try {
+      await supabase.from('verlof').insert({
+        'start': utc,
+        'end_time': utc,
+        'reason': 'Sick',
+        'verlof_type': 'sick',
+        'verlof_state': 'pending',
+        'user_id': userId,
+        'days_count': daysCount,
+      });
+
+      _showSnackBar('Successfully called in sick for ${DateFormat('EEEE, MMM d').format(day)}');
+      await _fetchRequests();
+      await _fetchLeaveBalance();
+    } catch (e) {
+      _showSnackBar('Failed to submit sick day: $e', isError: true);
+    } finally {
+      setState(() => _isSubmittingQuickSick = false);
+    }
+  }
+
+  bool _hasSickRequestToday() {
+  final today = DateTime.now();
+  final todayKey = DateTime(today.year, today.month, today.day);
+
+  return _events[todayKey]?.any((req) =>
+        req['verlof_type'] == 'sick' &&
+        (req['verlof_state'] == 'pending' || req['verlof_state'] == 'approved')
+      ) ?? false;
   }
 
   void _clearForm() {
@@ -572,6 +720,69 @@ class _MobileLayoutState extends State<MobileLayout> {
                                       ),
                                     ),
                                     const SizedBox(height: 32),
+                                    if (!_isManager)
+                                      Container(
+                                        width: double.infinity,
+                                        padding: const EdgeInsets.all(20),
+                                        decoration: BoxDecoration(
+                                          color: Colors.red.shade50,
+                                          borderRadius: BorderRadius.circular(20),
+                                          border: Border.all(color: Colors.red.shade200, width: 1.5),
+                                        ),
+                                        child: Column(
+                                          crossAxisAlignment: CrossAxisAlignment.start,
+                                          children: [
+                                            const Row(
+                                              children: [
+                                                Icon(Icons.sick, color: Colors.red, size: 28),
+                                                SizedBox(width: 8),
+                                                Text(
+                                                  'Quick Sick',
+                                                  style: TextStyle(
+                                                    fontSize: 20,
+                                                    fontWeight: FontWeight.bold,
+                                                    color: Colors.red,
+                                                  ),
+                                                ),
+                                              ],
+                                            ),
+                                            const SizedBox(height: 8),
+                                            const Text(
+                                              'Instantly call in sick for 1 day (today or any date)',
+                                              style: TextStyle(color: Colors.redAccent),
+                                            ),
+                                            const SizedBox(height: 16),
+                                            SizedBox(
+                                              width: double.infinity,
+                                              child: ElevatedButton.icon(
+                                                onPressed: _isSubmittingQuickSick || _hasSickRequestToday()
+                                                    ? null
+                                                    : _submitQuickSick,
+                                                icon: _isSubmittingQuickSick
+                                                    ? const SizedBox(width: 20, height: 20, child: CircularProgressIndicator(color: Colors.white, strokeWidth: 2))
+                                                    : const Icon(Icons.sick, color: Colors.white),
+                                                label: Text(
+                                                  _isSubmittingQuickSick
+                                                      ? 'Submitting...'
+                                                      : _hasSickRequestToday()
+                                                          ? 'Already Called In Sick Today'
+                                                          : 'Call in Sick Today',
+                                                  style: const TextStyle(fontSize: 17, fontWeight: FontWeight.bold, color: Colors.white),
+                                                ),
+                                                style: ElevatedButton.styleFrom(
+                                                  backgroundColor: Colors.red,
+                                                  foregroundColor: Colors.white,
+                                                  padding: const EdgeInsets.symmetric(vertical: 18),
+                                                  shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(14)),
+                                                ),
+                                              ),
+                                            ),
+                                          ],
+                                        ),
+                                      ),
+
+                                    const SizedBox(height: 32),
+
                                     if (!_isManager) ...[
                                       Text('New Leave Request', style: const TextStyle(fontSize: 18, fontWeight: FontWeight.bold)),
                                       const SizedBox(height: 16),
@@ -649,64 +860,146 @@ class _MobileLayoutState extends State<MobileLayout> {
                                     const SizedBox(height: 12),
                                     _requests.isEmpty
                                         ? const Text('No requests yet.')
-                                        : ListView.builder(
-                                            shrinkWrap: true,
-                                            physics: const NeverScrollableScrollPhysics(),
-                                            itemCount: _requests.length,
-                                            itemBuilder: (c, i) {
-                                              final req = _requests[i];
-                                              final start = DateTime.tryParse(req['start'] ?? '')?.toLocal();
-                                              final end = DateTime.tryParse(req['end_time'] ?? '')?.toLocal();
-                                              final state = req['verlof_state'] as String?;
-                                              final status = state == 'approved'
-                                                  ? 'Approved'
-                                                  : state == 'denied'
-                                                      ? 'Denied'
-                                                      : 'Pending';
-                                              final days = req['days_count'] as int? ?? 0;
-                                              final isOwn = req['user_id'] == supabase.auth.currentUser?.id;
-                                              return Card(
-                                                margin: const EdgeInsets.symmetric(vertical: 6),
-                                                child: ListTile(
-                                                  title: Text(_getDisplayTitle(req)),
-                                                  subtitle: Column(
-                                                    crossAxisAlignment: CrossAxisAlignment.start,
-                                                    children: [
-                                                      if (start != null)
-                                                        Text('Start: ${DateFormat('yyyy-MM-dd').format(start)}'),
-                                                      if (end != null)
-                                                        Text('End: ${DateFormat('yyyy-MM-dd').format(end)}'),
-                                                      Text('Status: $status'),
-                                                      Text('Days: $days'),
-                                                      if (_isManager) Text('User: ${req['user_id']}'),
-                                                    ],
+                                        : Column(
+                                            children: [
+                                              // BULK ACTION BAR
+                                              if (_isManager && _isBulkMode && _selectedRequestIds.isNotEmpty)
+                                                Container(
+                                                  padding: const EdgeInsets.all(12),
+                                                  margin: const EdgeInsets.only(bottom: 12),
+                                                  decoration: BoxDecoration(
+                                                    color: Colors.blue.shade50,
+                                                    borderRadius: BorderRadius.circular(12),
+                                                    border: Border.all(color: Colors.blue),
                                                   ),
-                                                  trailing: Row(
-                                                    mainAxisSize: MainAxisSize.min,
+                                                  child: Row(
                                                     children: [
-                                                      // Manager actions: only on OTHER people's requests
-                                                      if (_isManager && !isOwn) ...[
-                                                        if (state != 'approved')
-                                                          IconButton(icon: const Icon(Icons.check, color: Colors.green),   onPressed: () => _updateRequestStatus(req['id'], 'approved'), tooltip: 'Approve'),
-                                                        if (state != 'pending')
-                                                          IconButton(icon: const Icon(Icons.hourglass_empty, color: Colors.orange), onPressed: () => _updateRequestStatus(req['id'], 'pending'), tooltip: 'Set Pending'),
-                                                        if (state != 'denied')
-                                                          IconButton(icon: const Icon(Icons.close, color: Colors.red),    onPressed: () => _updateRequestStatus(req['id'], 'denied'),   tooltip: 'Deny'),
-                                                      ],
-                                                      // Delete: allowed on own request OR on others if manager
-                                                      if (isOwn || _isManager)
-                                                        IconButton(
-                                                          icon: const Icon(Icons.delete, color: Colors.red),
-                                                          onPressed: () => _deleteRequest(req['id']),
-                                                          tooltip: 'Delete',
+                                                      Text('${_selectedRequestIds.length} selected', style: const TextStyle(fontWeight: FontWeight.bold)),
+                                                      const Spacer(),
+                                                      ElevatedButton.icon(
+                                                        icon: const Icon(Icons.check, size: 18),
+                                                        label: const Text('Approve All'),
+                                                        style: ElevatedButton.styleFrom(
+                                                          backgroundColor: Colors.green,
+                                                          foregroundColor: Colors.white,
+                                                        ),
+                                                        onPressed: () => _bulkUpdateStatus('approve'),
+                                                      ),
+                                                      const SizedBox(width: 8),
+                                                      ElevatedButton.icon(
+                                                        icon: const Icon(Icons.close, size: 18),
+                                                        label: const Text('Deny All'),
+                                                        style: ElevatedButton.styleFrom(
+                                                          backgroundColor: Colors.red,
+                                                          foregroundColor: Colors.white,
+                                                        ),
+                                                        onPressed: () => _bulkUpdateStatus('deny'),
+                                                      ),
+                                                      const SizedBox(width: 8),
+                                                      TextButton(
+                                                        onPressed: () => setState(() {
+                                                          _selectedRequestIds.clear();
+                                                          _isBulkMode = false;
+                                                        }),
+                                                        child: const Text(
+                                                          'Cancel',
+                                                          style: TextStyle(color: Colors.black),
+                                                        ),
                                                       ),
                                                     ],
                                                   ),
                                                 ),
-                                              );
-                                            },
+
+                                              // BULK MODE CONTROLS
+                                              if (_isManager)
+                                                Padding(
+                                                  padding: const EdgeInsets.only(bottom: 8),
+                                                  child: Wrap(
+                                                    spacing: 8,
+                                                    children: [
+                                                      if (!_isBulkMode)
+                                                        ElevatedButton.icon(
+                                                          icon: const Icon(Icons.library_add_check_outlined),
+                                                          label: const Text('Bulk Actions'),
+                                                          onPressed: () => setState(() => _isBulkMode = true),
+                                                        ),
+                                                      if (_isBulkMode) ...[
+                                                        TextButton(
+                                                          onPressed: () {
+                                                            setState(() {
+                                                              _selectedRequestIds = _requests
+                                                                  .where((r) => r['verlof_state'] != 'approved' && r['user_id'] != supabase.auth.currentUser?.id)
+                                                                  .map((r) => r['id'] as int)
+                                                                  .toSet();
+                                                            });
+                                                          },
+                                                          child: const Text('Select All unapproved'),
+                                                        ),
+                                                        TextButton(onPressed: () => setState(() => _selectedRequestIds.clear()), child: const Text('Clear')),
+                                                        TextButton(onPressed: () => setState(() => _isBulkMode = false), child: const Text('Exit Bulk Mode')),
+                                                      ],
+                                                    ],
+                                                  ),
+                                                ),
+
+                                              // THE ACTUAL LIST WITH SELECTION
+                                              ListView.builder(
+                                                shrinkWrap: true,
+                                                physics: const NeverScrollableScrollPhysics(),
+                                                itemCount: _requests.length,
+                                                itemBuilder: (context, i) {
+                                                  final req = _requests[i];
+                                                  final id = req['id'] as int;
+                                                  final state = req['verlof_state'] as String?;
+                                                  final isOwn = req['user_id'] == supabase.auth.currentUser?.id;
+                                                  final isSelected = _selectedRequestIds.contains(id);
+                                                  final canSelect = _isManager && !isOwn && state != 'approved';
+
+                                                  return Card(
+                                                    color: isSelected ? Colors.blue.shade50 : null,
+                                                    child: ListTile(
+                                                      onTap: _isBulkMode && canSelect
+                                                          ? () => setState(() => isSelected ? _selectedRequestIds.remove(id) : _selectedRequestIds.add(id))
+                                                          : null,
+                                                      onLongPress: _isManager && !isOwn && !_isBulkMode ? () => setState(() => _isBulkMode = true) : null,
+                                                      leading: _isBulkMode && canSelect
+                                                          ? Checkbox(
+                                                              value: isSelected,
+                                                              onChanged: (v) => setState(() => v == true ? _selectedRequestIds.add(id) : _selectedRequestIds.remove(id)),
+                                                            )
+                                                          : null,
+                                                      title: Text(_getDisplayTitle(req)),
+                                                      subtitle: Column(
+                                                        crossAxisAlignment: CrossAxisAlignment.start,
+                                                        children: [
+                                                          if (DateTime.tryParse(req['start'] ?? '') != null)
+                                                            Text('Start: ${DateFormat('yyyy-MM-dd').format(DateTime.parse(req['start']).toLocal())}'),
+                                                          if (DateTime.tryParse(req['end_time'] ?? '') != null)
+                                                            Text('End: ${DateFormat('yyyy-MM-dd').format(DateTime.parse(req['end_time']).toLocal())}'),
+                                                          Text('Status: ${state == 'approved' ? 'Approved' : state == 'denied' ? 'Denied' : 'Pending'}'),
+                                                          Text('Days: ${req['days_count']}'),
+                                                          if (_isManager) Text('User: ${req['user_id']}'),
+                                                        ],
+                                                      ),
+                                                      trailing: Row(
+                                                        mainAxisSize: MainAxisSize.min,
+                                                        children: [
+                                                          if (_isManager && !isOwn && !_isBulkMode) ...[
+                                                            if (state != 'approved')
+                                                              IconButton(icon: const Icon(Icons.check, color: Colors.green), onPressed: () => _updateRequestStatus(id, 'approve'), tooltip: 'Approve'),
+                                                            if (state != 'denied')
+                                                              IconButton(icon: const Icon(Icons.close, color: Colors.red), onPressed: () => _updateRequestStatus(id, 'deny'), tooltip: 'Deny'),
+                                                          ],
+                                                          if (isOwn || _isManager)
+                                                            IconButton(icon: const Icon(Icons.delete, color: Colors.red), onPressed: () => _deleteRequest(id), tooltip: 'Delete'),
+                                                        ],
+                                                      ),
+                                                    ),
+                                                  );
+                                                },
+                                              ),
+                                            ],
                                           ),
-                                    const SizedBox(height: 32),
                                   ],
                                 ),
                               ),
@@ -773,10 +1066,15 @@ class _DesktopLayoutState extends State<DesktopLayout> {
   bool _isManager = false;
   String? _selectedVerlofType;
   final List<String> _verlofTypes = ['sick', 'holiday', 'personal'];
+  Set<int> _selectedRequestIds = <int>{};
+  bool _isBulkMode = false;
+  late DateTime _quickSickDate;
+  bool _isSubmittingQuickSick = false;
 
   @override
   void initState() {
     super.initState();
+    _quickSickDate = DateTime.now();
     _checkManagerAndFetch();
     _fetchLeaveBalance();
   }
@@ -1056,23 +1354,16 @@ class _DesktopLayoutState extends State<DesktopLayout> {
       if (id == null) throw 'Invalid request ID';
       final req = _requests.firstWhere((r) => r['id'] == id, orElse: () => throw 'Request not found');
       final wasApproved = req['verlof_state'] == 'approved';
-      final days = (req['days_count'] as num?)?.toInt() ?? 0;
+      final daysRaw = req['days_count'];
+      final days = (daysRaw is num) ? daysRaw.toInt() : int.tryParse(daysRaw.toString()) ?? 0;
       final userId = req['user_id'] as String?;
       if (userId == null) throw 'Missing user ID';
       await supabase.from('verlof').delete().eq('id', id);
       if (wasApproved && days > 0) {
-        try {
           await supabase.rpc('decrement_leave_used', params: {
             'p_user_id': userId,
             'p_days': days,
           });
-        } catch (rpcError) {
-          print('RPC decrement failed: $rpcError');
-          if (userId == supabase.auth.currentUser?.id) {
-            await _fetchLeaveBalance();
-          }
-          _showSnackBar('Warning: Leave balance may be out of sync.', isError: true);
-        }
       }
       _showSnackBar('Request deleted successfully.');
       await _fetchRequests();
@@ -1085,39 +1376,120 @@ class _DesktopLayoutState extends State<DesktopLayout> {
     }
   }
 
-  Future<void> _updateRequestStatus(int id, String state) async {
-    try {
-      final req = _requests.firstWhere((r) => r['id'] == id);
-      final userId = req['user_id'];
-      final days = req['days_count'] as int;
+  Future<void> _updateRequestStatus(int id, String action) async {
+    print('>>> APPROVE CLICKED for request ID: $id | Action: $action');
 
-      final newState = state == 'approve' ? 'approved'
-                     : state == 'deny'   ? 'denied'
-                     : state;
+    try {
+      // ←←← THIS IS THE FIX — FETCH FRESH DATA FROM DB ←←←
+      final freshResponse = await supabase
+          .from('verlof')
+          .select()
+          .eq('id', id)
+          .single();
+
+      final userId = freshResponse['user_id'] as String;
+      final days = (freshResponse['days_count'] as num?)?.toInt() ?? 0;
+      final currentState = freshResponse['verlof_state'] as String;
+      final newState = switch (action) {
+        'approve' => 'approved',
+        'deny' => 'denied',
+        _ => 'pending',
+      };
+
+      print('FRESH DATA → user: $userId | days: $days | current: $currentState → new: $newState');
+
+      if (currentState != newState) {
+        if (newState == 'approved' && currentState != 'approved') {
+          print('CALLING increment_leave_used($userId, $days)');
+          await supabase.rpc('increment_leave_used', params: {
+            'p_user_id': userId,
+            'p_days': days,
+          });
+          print('increment_leave_used SUCCESS');
+        } else if (currentState == 'approved' && newState != 'approved') {
+          print('CALLING decrement_leave_used($userId, $days)');
+          await supabase.rpc('decrement_leave_used', params: {
+            'p_user_id': userId,
+            'p_days': days,
+          });
+        }
+      }
 
       await supabase
           .from('verlof')
           .update({'verlof_state': newState})
           .eq('id', id);
 
-      if (newState == 'approved') {
-        await supabase.rpc('increment_leave_used', params: {
-          'p_user_id': userId,
-          'p_days': days,
-        });
-      }
-
-      _showSnackBar('Request ${newState == 'approved' ? 'approved' : newState == 'denied' ? 'denied' : 'set to pending'}.');
-      
+      _showSnackBar('Request $newState!');
       await _fetchRequests();
       if (userId == supabase.auth.currentUser?.id) {
         await _fetchLeaveBalance();
       }
-    } catch (e) {
-      _showSnackBar('Failed to update: $e', isError: true);
+    } catch (e, st) {
+      print('UPDATE FAILED: $e');
+      print(st);
+      _showSnackBar('Failed: $e', isError: true);
     }
   }
+    
+  Future<void> _bulkUpdateStatus(String action) async {
+    if (_selectedRequestIds.isEmpty) {
+      _showSnackBar('No requests selected', isError: true);
+      return;
+    }
 
+    final confirmed = await showDialog<bool>(
+      context: context,
+      builder: (_) => AlertDialog(
+        title: Text('Bulk ${action == 'approve' ? 'Approve' : 'Deny'}'),
+        content: Text('Update ${_selectedRequestIds.length} request(s)?'),
+        actions: [
+          TextButton(onPressed: () => Navigator.pop(context, false), child: const Text('Cancel')),
+          TextButton(
+            onPressed: () => Navigator.pop(context, true),
+            child: Text(action == 'approve' ? 'Approve All' : 'Deny All', style: const TextStyle(color: Colors.red)),
+          ),
+        ],
+      ),
+    );
+
+    if (confirmed != true) return;
+
+    setState(() => _isLoadingRequests = true);
+
+    final newState = action == 'approve' ? 'approved' : 'denied';
+
+    try {
+      for (final id in _selectedRequestIds) {
+        final fresh = await supabase.from('verlof').select().eq('id', id).single();
+        final userId = fresh['user_id'] as String;
+        final days = (fresh['days_count'] as num?)?.toInt() ?? 0;
+        final current = fresh['verlof_state'] as String;
+
+        if (current != newState) {
+          if (newState == 'approved' && current != 'approved') {
+            await supabase.rpc('increment_leave_used', params: {'p_user_id': userId, 'p_days': days});
+          } else if (current == 'approved' && newState != 'approved') {
+            await supabase.rpc('decrement_leave_used', params: {'p_user_id': userId, 'p_days': days});
+          }
+        }
+        await supabase.from('verlof').update({'verlof_state': newState}).eq('id', id);
+      }
+
+      _showSnackBar('Bulk ${action == 'approve' ? 'approved' : 'denied'} ${_selectedRequestIds.length} requests!');
+      setState(() {
+        _selectedRequestIds.clear();
+        _isBulkMode = false;
+      });
+      await _fetchRequests();
+      _fetchLeaveBalance();
+    } catch (e) {
+      _showSnackBar('Bulk action failed: $e', isError: true);
+    } finally {
+      setState(() => _isLoadingRequests = false);
+    }
+  }
+  
   Future<void> _pickDate(TextEditingController controller) async {
     final picked = await showDatePicker(
       context: context,
@@ -1127,6 +1499,60 @@ class _DesktopLayoutState extends State<DesktopLayout> {
     );
     if (picked != null) {
       controller.text = DateFormat('yyyy-MM-dd').format(picked);
+    }
+  }
+
+  Future<void> _submitQuickSick() async {
+    if (_isSubmittingQuickSick) return;
+
+    setState(() => _isSubmittingQuickSick = true);
+
+    // Rate limit (reuse the same one you already have)
+    if (_lastSubmitTime != null &&
+        DateTime.now().difference(_lastSubmitTime!) < _rateLimitDuration) {
+      _showSnackBar('Please wait a moment before submitting again.', isError: true);
+      setState(() => _isSubmittingQuickSick = false);
+      return;
+    }
+    _lastSubmitTime = DateTime.now();
+
+    final userId = supabase.auth.currentUser?.id;
+    if (userId == null) {
+      _showSnackBar('Not logged in.', isError: true);
+      setState(() => _isSubmittingQuickSick = false);
+      return;
+    }
+
+    // Use the same date for start & end → 1 day
+    final day = DateTime(_quickSickDate.year, _quickSickDate.month, _quickSickDate.day);
+    final daysCount = _calculateWorkdays(day, day);
+
+    if (daysCount > _remainingLeaveDays) {
+      _showSnackBar('Not enough leave days left ($_remainingLeaveDays available).', isError: true);
+      setState(() => _isSubmittingQuickSick = false);
+      return;
+    }
+
+    final utc = day.toUtc().toIso8601String();
+
+    try {
+      await supabase.from('verlof').insert({
+        'start': utc,
+        'end_time': utc,
+        'reason': 'Sick',
+        'verlof_type': 'sick',
+        'verlof_state': 'pending',
+        'user_id': userId,
+        'days_count': daysCount,
+      });
+
+      _showSnackBar('Successfully called in sick for ${DateFormat('EEEE, MMM d').format(day)}');
+      await _fetchRequests();
+      await _fetchLeaveBalance();
+    } catch (e) {
+      _showSnackBar('Failed to submit sick day: $e', isError: true);
+    } finally {
+      setState(() => _isSubmittingQuickSick = false);
     }
   }
 
@@ -1144,6 +1570,16 @@ class _DesktopLayoutState extends State<DesktopLayout> {
         backgroundColor: isError ? Colors.red : Colors.green,
       ),
     );
+  }
+
+  bool _hasSickRequestToday() {
+  final today = DateTime.now();
+  final todayKey = DateTime(today.year, today.month, today.day);
+
+  return _events[todayKey]?.any((req) =>
+        req['verlof_type'] == 'sick' &&
+        (req['verlof_state'] == 'pending' || req['verlof_state'] == 'approved')
+      ) ?? false;
   }
 
   String _sanitizeInput(String input) =>
@@ -1306,6 +1742,65 @@ class _DesktopLayoutState extends State<DesktopLayout> {
                                     fontWeight: FontWeight.bold,
                                   ),
                                   textAlign: TextAlign.center,
+                                ),
+                              ),
+                              const SizedBox(height: 16),
+                              Container(
+                                width: double.infinity,
+                                padding: const EdgeInsets.all(20),
+                                decoration: BoxDecoration(
+                                  color: Colors.grey[850],
+                                  borderRadius: BorderRadius.circular(16),
+                                ),
+                                child: Column(
+                                  crossAxisAlignment: CrossAxisAlignment.start,
+                                  children: [
+                                    const Row(
+                                      children: [
+                                        Icon(Icons.sick, color: Colors.red, size: 28),
+                                        SizedBox(width: 12),
+                                        Text(
+                                          'Quick Sick',
+                                          style: TextStyle(
+                                            color: Colors.white,
+                                            fontSize: 20,
+                                            fontWeight: FontWeight.bold,
+                                          ),
+                                        ),
+                                      ],
+                                    ),
+                                    const SizedBox(height: 8),
+                                    const Text(
+                                      'Call in sick for today or pick another date',
+                                      style: TextStyle(color: Colors.white),
+                                    ),
+                                    const SizedBox(height: 16),
+                                    SizedBox(
+                                      width: double.infinity,
+                                      child: ElevatedButton.icon(
+                                        onPressed: _isSubmittingQuickSick || _hasSickRequestToday()
+                                            ? null
+                                            : _submitQuickSick,
+                                        icon: _isSubmittingQuickSick
+                                            ? const SizedBox(width: 20, height: 20, child: CircularProgressIndicator(color: Colors.white, strokeWidth: 2))
+                                            : const Icon(Icons.sick, color: Colors.white),
+                                        label: Text(
+                                          _isSubmittingQuickSick
+                                              ? 'Submitting...'
+                                              : _hasSickRequestToday()
+                                                  ? 'Already Called In Sick Today'
+                                                  : 'Call in Sick Today',
+                                          style: const TextStyle(fontSize: 17, fontWeight: FontWeight.bold, color: Colors.white),
+                                        ),
+                                        style: ElevatedButton.styleFrom(
+                                          backgroundColor: Colors.red,
+                                          foregroundColor: Colors.white,
+                                          padding: const EdgeInsets.symmetric(vertical: 18),
+                                          shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(14)),
+                                        ),
+                                      ),
+                                    ),
+                                  ],
                                 ),
                               ),
                             ],
@@ -1483,6 +1978,7 @@ class _DesktopLayoutState extends State<DesktopLayout> {
                                     child: ElevatedButton(
                                       onPressed: _isSubmitting ? null : _submitRequest,
                                       style: ElevatedButton.styleFrom(
+                                        foregroundColor: Colors.white,
                                         backgroundColor: Colors.red,
                                         padding: const EdgeInsets.symmetric(vertical: 16),
                                         shape: RoundedRectangleBorder(
@@ -1500,65 +1996,147 @@ class _DesktopLayoutState extends State<DesktopLayout> {
                                 ),
                                 const SizedBox(height: 12),
                                 _requests.isEmpty
-                                    ? const Text('No requests yet.')
-                                    : ListView.builder(
+                                ? const Text('No requests yet.')
+                                : Column(
+                                    children: [
+                                      // BULK ACTION BAR
+                                      if (_isManager && _isBulkMode && _selectedRequestIds.isNotEmpty)
+                                        Container(
+                                          padding: const EdgeInsets.all(12),
+                                          margin: const EdgeInsets.only(bottom: 12),
+                                          decoration: BoxDecoration(
+                                            color: Colors.blue.shade50,
+                                            borderRadius: BorderRadius.circular(12),
+                                            border: Border.all(color: Colors.blue),
+                                          ),
+                                          child: Row(
+                                            children: [
+                                              Text('${_selectedRequestIds.length} selected', style: const TextStyle(fontWeight: FontWeight.bold)),
+                                              const Spacer(),
+                                              ElevatedButton.icon(
+                                                icon: const Icon(Icons.check, size: 18),
+                                                label: const Text('Approve All'),
+                                                style: ElevatedButton.styleFrom(
+                                                  backgroundColor: Colors.green,
+                                                  foregroundColor: Colors.white,
+                                                ),
+                                                onPressed: () => _bulkUpdateStatus('approve'),
+                                              ),
+                                              const SizedBox(width: 8),
+                                              ElevatedButton.icon(
+                                                icon: const Icon(Icons.close, size: 18),
+                                                label: const Text('Deny All'),
+                                                style: ElevatedButton.styleFrom(
+                                                  backgroundColor: Colors.red,
+                                                  foregroundColor: Colors.white,
+                                                ),
+                                                onPressed: () => _bulkUpdateStatus('deny'),
+                                              ),
+                                              const SizedBox(width: 8),
+                                              TextButton(
+                                                onPressed: () => setState(() {
+                                                  _selectedRequestIds.clear();
+                                                  _isBulkMode = false;
+                                                }),
+                                                child: const Text(
+                                                  'Cancel',
+                                                  style: TextStyle(color: Colors.black),
+                                                ),
+                                              ),
+                                            ],
+                                          ),
+                                        ),
+
+                                      // BULK MODE CONTROLS
+                                      if (_isManager)
+                                        Padding(
+                                          padding: const EdgeInsets.only(bottom: 8),
+                                          child: Wrap(
+                                            spacing: 8,
+                                            children: [
+                                              if (!_isBulkMode)
+                                                ElevatedButton.icon(
+                                                  icon: const Icon(Icons.library_add_check_outlined),
+                                                  label: const Text('Bulk Actions'),
+                                                  onPressed: () => setState(() => _isBulkMode = true),
+                                                ),
+                                              if (_isBulkMode) ...[
+                                                TextButton(
+                                                  onPressed: () {
+                                                    setState(() {
+                                                      _selectedRequestIds = _requests
+                                                          .where((r) => r['verlof_state'] != 'approved' && r['user_id'] != supabase.auth.currentUser?.id)
+                                                          .map((r) => r['id'] as int)
+                                                          .toSet();
+                                                    });
+                                                  },
+                                                  child: const Text('Select All Pending'),
+                                                ),
+                                                TextButton(onPressed: () => setState(() => _selectedRequestIds.clear()), child: const Text('Clear')),
+                                                TextButton(onPressed: () => setState(() => _isBulkMode = false), child: const Text('Exit Bulk Mode')),
+                                              ],
+                                            ],
+                                          ),
+                                        ),
+
+                                      // THE ACTUAL LIST WITH SELECTION
+                                      ListView.builder(
                                         shrinkWrap: true,
                                         physics: const NeverScrollableScrollPhysics(),
                                         itemCount: _requests.length,
-                                        itemBuilder: (c, i) {
+                                        itemBuilder: (context, i) {
                                           final req = _requests[i];
-                                          final start = DateTime.tryParse(req['start'] ?? '')?.toLocal();
-                                          final end = DateTime.tryParse(req['end_time'] ?? '')?.toLocal();
+                                          final id = req['id'] as int;
                                           final state = req['verlof_state'] as String?;
-                                          final status = state == 'approved'
-                                              ? 'Approved'
-                                              : state == 'denied'
-                                                  ? 'Denied'
-                                                  : 'Pending';
-                                          final days = req['days_count'] as int? ?? 0;
                                           final isOwn = req['user_id'] == supabase.auth.currentUser?.id;
+                                          final isSelected = _selectedRequestIds.contains(id);
+                                          final canSelect = _isManager && !isOwn && state != 'approved';
+
                                           return Card(
-                                            margin: const EdgeInsets.symmetric(vertical: 6),
+                                            color: isSelected ? Colors.blue.shade50 : null,
                                             child: ListTile(
+                                              onTap: _isBulkMode && canSelect
+                                                  ? () => setState(() => isSelected ? _selectedRequestIds.remove(id) : _selectedRequestIds.add(id))
+                                                  : null,
+                                              onLongPress: _isManager && !isOwn && !_isBulkMode ? () => setState(() => _isBulkMode = true) : null,
+                                              leading: _isBulkMode && canSelect
+                                                  ? Checkbox(
+                                                      value: isSelected,
+                                                      onChanged: (v) => setState(() => v == true ? _selectedRequestIds.add(id) : _selectedRequestIds.remove(id)),
+                                                    )
+                                                  : null,
                                               title: Text(_getDisplayTitle(req)),
                                               subtitle: Column(
                                                 crossAxisAlignment: CrossAxisAlignment.start,
                                                 children: [
-                                                  if (start != null)
-                                                    Text('Start: ${DateFormat('yyyy-MM-dd').format(start)}'),
-                                                  if (end != null)
-                                                    Text('End: ${DateFormat('yyyy-MM-dd').format(end)}'),
-                                                  Text('Status: $status'),
-                                                  Text('Days: $days'),
+                                                  if (DateTime.tryParse(req['start'] ?? '') != null)
+                                                    Text('Start: ${DateFormat('yyyy-MM-dd').format(DateTime.parse(req['start']).toLocal())}'),
+                                                  if (DateTime.tryParse(req['end_time'] ?? '') != null)
+                                                    Text('End: ${DateFormat('yyyy-MM-dd').format(DateTime.parse(req['end_time']).toLocal())}'),
+                                                  Text('Status: ${state == 'approved' ? 'Approved' : state == 'denied' ? 'Denied' : 'Pending'}'),
+                                                  Text('Days: ${req['days_count']}'),
                                                   if (_isManager) Text('User: ${req['user_id']}'),
                                                 ],
                                               ),
                                               trailing: Row(
                                                 mainAxisSize: MainAxisSize.min,
                                                 children: [
-                                                  // Manager actions: only on OTHER people's requests
-                                                  if (_isManager && !isOwn) ...[
+                                                  if (_isManager && !isOwn && !_isBulkMode) ...[
                                                     if (state != 'approved')
-                                                      IconButton(icon: const Icon(Icons.check, color: Colors.green),   onPressed: () => _updateRequestStatus(req['id'], 'approved'), tooltip: 'Approve'),
-                                                    if (state != 'pending')
-                                                      IconButton(icon: const Icon(Icons.hourglass_empty, color: Colors.orange), onPressed: () => _updateRequestStatus(req['id'], 'pending'), tooltip: 'Set Pending'),
+                                                      IconButton(icon: const Icon(Icons.check, color: Colors.green), onPressed: () => _updateRequestStatus(id, 'approve'), tooltip: 'Approve'),
                                                     if (state != 'denied')
-                                                      IconButton(icon: const Icon(Icons.close, color: Colors.red),    onPressed: () => _updateRequestStatus(req['id'], 'denied'),   tooltip: 'Deny'),
+                                                      IconButton(icon: const Icon(Icons.close, color: Colors.red), onPressed: () => _updateRequestStatus(id, 'deny'), tooltip: 'Deny'),
                                                   ],
-                                                  // Delete: allowed on own request OR on others if manager
                                                   if (isOwn || _isManager)
-                                                    IconButton(
-                                                      icon: const Icon(Icons.delete, color: Colors.red),
-                                                      onPressed: () => _deleteRequest(req['id']),
-                                                      tooltip: 'Delete',
-                                                  ),
+                                                    IconButton(icon: const Icon(Icons.delete, color: Colors.red), onPressed: () => _deleteRequest(id), tooltip: 'Delete'),
                                                 ],
                                               ),
                                             ),
                                           );
                                         },
                                       ),
-                                const SizedBox(height: 32),
+                                    ],
+                                  ),
                               ],
                             ),
                           ),

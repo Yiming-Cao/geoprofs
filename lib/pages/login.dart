@@ -223,7 +223,7 @@ class _DesktopLayoutState extends State<DesktopLayout> {
       if (!success) {
         _error = "Invalid email or password";
       } else {
-        Navigator.pushReplacementNamed(context, '/dashboard');
+        Navigator.pushReplacementNamed(context, '/verlof');
       }
     });
   }
