@@ -68,38 +68,24 @@ class Employee {
   });
 }
 
+// Load employees - fully in English
 Future<List<Employee>> loadEmployees() async {
   try {
-    final data = await supabase
+    final response = await supabase
         .from('permissions')
-        .select('user_uuid, role')
+        .select('user_uuid, role, users:users!users_id_fkey(name)')
         .order('updated_at', ascending: false);
 
-    final List<Employee> employees = [];
+    return (response as List).map((row) {
+      final uuid = row['user_uuid'] as String;
+      final role = (row['role'] as String?)?.toLowerCase() ?? 'worker';
+      final userInfo = row['users'] as Map<String, dynamic>?;
+      final name = (userInfo?['name'] as String?) ?? 'No name set';
 
-    for (final row in data) {
-      final String uuid = row['user_uuid'] as String;
-      final String role = (row['role'] as String?)?.toLowerCase() ?? 'worker';
-
-      String name = 'No name';
-
-      try {
-        final user = (await supabase.auth.admin.getUserById(uuid)).user;
-
-        
-        name = user?.userMetadata?['display_name']?.toString().trim() ??
-               user?.email?.split('@').first ??
-               uuid.substring(0, 8);
-      } catch (_) {
-        name = uuid.substring(0, 8);
-      }
-
-      employees.add(Employee(uuid: uuid, name: name, role: role));
-    }
-
-    return employees;
+      return Employee(uuid: uuid, name: name, role: role);
+    }).toList();
   } catch (e) {
-    debugPrint('Load failed: $e');
+    debugPrint('Failed to load employees: $e');
     return [];
   }
 }
@@ -286,14 +272,13 @@ class _DesktopLayoutState extends State<DesktopLayout> {
     });
   }
 
-  // Add employee invite dialog
+  // Fixed _showInviteDialog - correct function invoke with body parameter
   void _showInviteDialog() {
     final emailCtrl = TextEditingController();
     final nameCtrl = TextEditingController();
-    final deptCtrl = TextEditingController();
 
     showDialog(
-      context: context,  
+      context: context,
       builder: (ctx) => AlertDialog(
         title: const Text('Add New Employee'),
         content: SizedBox(
@@ -301,11 +286,16 @@ class _DesktopLayoutState extends State<DesktopLayout> {
           child: Column(
             mainAxisSize: MainAxisSize.min,
             children: [
-              TextField(controller: emailCtrl, decoration: const InputDecoration(labelText: 'Email *')),
+              TextField(
+                controller: emailCtrl,
+                decoration: const InputDecoration(labelText: 'Email *'),
+                keyboardType: TextInputType.emailAddress,
+              ),
               const SizedBox(height: 12),
-              TextField(controller: nameCtrl, decoration: const InputDecoration(labelText: 'Name *')),
-              const SizedBox(height: 12),
-              TextField(controller: deptCtrl, decoration: const InputDecoration(labelText: 'Role (optional)')),
+              TextField(
+                controller: nameCtrl,
+                decoration: const InputDecoration(labelText: 'Name *'),
+              ),
             ],
           ),
         ),
@@ -316,42 +306,36 @@ class _DesktopLayoutState extends State<DesktopLayout> {
             onPressed: () async {
               final email = emailCtrl.text.trim();
               final name = nameCtrl.text.trim();
-              final dept = deptCtrl.text.trim();
-              if (email.isEmpty || name.isEmpty) return;
+
+              if (email.isEmpty || name.isEmpty || !email.contains('@')) {
+                ScaffoldMessenger.of(context).showSnackBar(
+                  const SnackBar(content: Text('Please enter a valid email and name')),
+                );
+                return;
+              }
 
               try {
-                //  admin API create user
-                final adminResp = await supabase.auth.admin.createUser(
-                  AdminUserAttributes(
-                    email: email,
-                    password: 'temp123456',
-                    emailConfirm: true, 
-                    userMetadata: {
-                      'display_name': name,
-                      'department': dept,
-                    },
-                  ),
+                final response = await supabase.functions.invoke(
+                  'add-employee',
+                  body: {'email': email, 'name': name},
+                  headers: {
+                    'Content-Type': 'application/json',
+                  },
                 );
 
-                if (adminResp.user == null) throw 'Add user failed';
-
-                final newUserId = adminResp.user!.id;
-
-                //  permissions
-                await supabase.from('permissions').insert({
-                  'user_uuid': newUserId,
-                  'role': 'worker',
-                });
+                if (response.data == null || response.data['error'] != null) {
+                  throw response.data?['error'] ?? 'Unknown error';
+                }
 
                 if (ctx.mounted) Navigator.pop(ctx);
                 ScaffoldMessenger.of(context).showSnackBar(
-                  SnackBar(content: Text('Add user secusses：$email')),
+                  SnackBar(content: Text('Employee added: $name')),
                 );
-                _refresh(); //  _refreshEmployees()
+                _refresh();
               } catch (e) {
-                debugPrint('Add user failed: $e');
+                debugPrint('Add employee failed: $e');
                 ScaffoldMessenger.of(context).showSnackBar(
-                  const SnackBar(content: Text('Add user failed()')),
+                  SnackBar(content: Text('Failed: $e')),
                 );
               }
             },
