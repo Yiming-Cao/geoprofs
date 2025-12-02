@@ -12,13 +12,12 @@ class TeamPage extends StatelessWidget {
         defaultTargetPlatform == TargetPlatform.iOS) {
       return const MobileLayout();
     }
-    return const DesktopLayout(); // const mag hier weer, want we gebruiken geen late vars meer op widget-niveau
+    return const DesktopLayout();
   }
 }
 
 class MobileLayout extends StatefulWidget {
   const MobileLayout({super.key});
-
   @override
   State<MobileLayout> createState() => _MobileLayoutState();
 }
@@ -28,49 +27,91 @@ class _MobileLayoutState extends State<MobileLayout> {
   Widget build(BuildContext context) {
     return Scaffold(
       appBar: AppBar(title: const Text('Team Page - Mobile')),
-      body: const Center(
-        child: Text(
-          'Mobile layout for the Team Page.',
-          style: TextStyle(fontSize: 18),
-        ),
-      ),
+      body: const Center(child: Text('Mobile komt later')),
     );
   }
 }
 
-// Desktop layout
 class DesktopLayout extends StatefulWidget {
   const DesktopLayout({super.key});
-
   @override
   State<DesktopLayout> createState() => _DesktopLayoutState();
 }
 
 class _DesktopLayoutState extends State<DesktopLayout> {
-  late Future<String?> userRoleFuture;
+  late final Future<Map<String, dynamic>> teamInfoFuture;
 
   @override
   void initState() {
     super.initState();
-    userRoleFuture = _getUserRole(); // nu een private methode
+    teamInfoFuture = _loadTeamInfo();
   }
 
-  // Private methode (beter dan losse functie in de class)
-  Future<String?> _getUserRole() async {
+  Future<Map<String, dynamic>> _loadTeamInfo() async {
     final user = Supabase.instance.client.auth.currentUser;
-    if (user == null) return 'Niet ingelogd';
+    if (user == null) {
+      return {
+        'role': 'Niet ingelogd',
+        'isManager': false,
+        'managers': <Map<String, String>>[],
+      };
+    }
 
-    try {
-      final response = await Supabase.instance.client
-          .from('permissions')           // jouw tabel
-          .select('role')                // kolom met de rol
-          .eq('user_uuid', user.id)             // let op: id (uuid) van de user
-          .maybeSingle();                // veiliger dan .single()
+    final userId = user.id;
+    final roleData = await Supabase.instance.client
+        .from('permissions')
+        .select('role')
+        .eq('user_uuid', userId)
+        .maybeSingle();
 
-      return response?['role'] as String? ?? 'Geen rol gevonden';
-    } catch (e) {
-      // Bij geen rij of error → fallback
-      return 'Fout bij ophalen rol $e';
+    final String role = roleData?['role'] ?? 'Geen rol gevonden';
+
+    
+    final teamData = await Supabase.instance.client
+        .from('teams')
+        .select('manager')             
+        .eq('id', userId)             
+        .maybeSingle();
+
+    bool isManager = false;
+    List<Map<String, String>> managersList = [];
+
+    if (teamData != null) {
+      final List<dynamic> managerUuids = teamData['manager'] ?? [];
+
+      isManager = managerUuids.contains(userId);
+
+      if (managerUuids.isNotEmpty) {
+        final managersData = await Supabase.instance.client
+            .from('auth.users')
+            .select('id, email, raw_user_meta_data')
+            .inFilter('id', managerUuids.cast<String>());
+
+        managersList = managersData.map((m) {
+          final meta = m['raw_user_meta_data'] as Map<String, dynamic>?;
+          final name = meta?['full_name'] ?? meta?['name'] ?? 'Onbekende gebruiker';
+          return {
+            'name': name as String,
+            'email': m['email'] as String,
+          };
+        }).toList().cast<Map<String, String>>();
+      }
+    }
+
+    return {
+      'role': role,
+      'isManager': isManager,
+      'managers': managersList,
+    };
+  }
+
+  Color _colorForRole(String role) {
+    switch (role.toLowerCase()) {
+      case 'admin': return Colors.red;
+      case 'office_manager': return const Color.fromARGB(255, 140, 0, 255);
+      case 'manager': return Colors.orange;
+      case 'worker': return Colors.green;
+      default: return Colors.grey;
     }
   }
 
@@ -78,55 +119,71 @@ class _DesktopLayoutState extends State<DesktopLayout> {
   Widget build(BuildContext context) {
     return Scaffold(
       appBar: AppBar(title: const Text('Team Page - Desktop')),
-      body: FutureBuilder<String?>(
-        future: userRoleFuture,
+      body: FutureBuilder<Map<String, dynamic>>(
+        future: teamInfoFuture,
         builder: (context, snapshot) {
           if (snapshot.connectionState == ConnectionState.waiting) {
             return const Center(child: CircularProgressIndicator());
           }
-
           if (snapshot.hasError) {
-            return Center(
-              child: Text('Error: ${snapshot.error}'),
-            );
+            return Center(child: Text('Fout: ${snapshot.error}'));
           }
 
-          final role = snapshot.data ?? 'Onbekend';
+          final data = snapshot.data!;
+          final String role = data['role'];
+          bool isManager = data['isManager'];
+          List<Map<String, String>> managers = data['managers'];
 
-          // Leuke rol-badge in kleur
-          Color roleColor = Colors.grey;
-          if (role.toLowerCase() == 'admin') roleColor = Colors.red;
-          if (role.toLowerCase() == 'office_manager') roleColor = const Color.fromARGB(255, 140, 0, 255);
-          if (role.toLowerCase() == 'manager') roleColor = Colors.orange;
-          if (role.toLowerCase() == 'worker') roleColor = Colors.green;
+          final Color roleColor = _colorForRole(role);
 
           return Center(
-            child: Column(
-              mainAxisAlignment: MainAxisAlignment.center,
-              children: [
-                const Text(
-                  'Ingelogd als:',
-                  style: TextStyle(fontSize: 24),
-                ),
-                const SizedBox(height: 5),
-                Container(
-                  padding: const EdgeInsets.symmetric(horizontal: 24, vertical: 12),
-                  decoration: BoxDecoration(
-                    color: roleColor.withOpacity(0.2),
-                    border: Border.all(color: roleColor, width: 2),
-                    borderRadius: BorderRadius.circular(30),
-                  ),
-                  child: Text(
-                    role.toUpperCase(),
-                    style: TextStyle(
-                      fontSize: 36,
-                      fontWeight: FontWeight.bold,
-                      color: roleColor,
-                      letterSpacing: 1.5,
+            child: SingleChildScrollView(
+              padding: const EdgeInsets.all(24),
+              child: Column(
+                children: [
+                  const Text('Ingelogd als:', style: TextStyle(fontSize: 28)),
+                  const SizedBox(height: 16),
+                  Container(
+                    padding: const EdgeInsets.symmetric(horizontal: 40, vertical: 20),
+                    decoration: BoxDecoration(
+                      color: roleColor.withOpacity(0.2),
+                      border: Border.all(color: roleColor, width: 3),
+                      borderRadius: BorderRadius.circular(30),
+                    ),
+                    child: Text(
+                      role.toUpperCase(),
+                      style: TextStyle(fontSize: 48, fontWeight: FontWeight.bold, color: roleColor),
                     ),
                   ),
-                ),
-              ],
+                  const SizedBox(height: 50),
+
+                  if (isManager)
+                    Container(
+                      padding: const EdgeInsets.all(20),
+                      decoration: BoxDecoration(
+                        color: Colors.orange.shade100,
+                        borderRadius: BorderRadius.circular(16),
+                        border: Border.all(color: Colors.orange, width: 3),
+                      ),
+                      child: const Text('Jij bent manager van dit team', style: TextStyle(fontSize: 22, fontWeight: FontWeight.bold)),
+                    ),
+
+                  const SizedBox(height: 40),
+
+                  if (managers.isNotEmpty) ...[
+                    const Text('Je manager(s):', style: TextStyle(fontSize: 24, fontWeight: FontWeight.bold)),
+                    const SizedBox(height: 12),
+                    ...managers.map((m) => Card(
+                          child: ListTile(
+                            leading: CircleAvatar(backgroundColor: Colors.orange.shade200, child: const Icon(Icons.person)),
+                            title: Text(m['name']!, style: const TextStyle(fontWeight: FontWeight.w600)),
+                            subtitle: Text(m['email']!),
+                          ),
+                        )),
+                  ] else if (!isManager)
+                    const Text('Je hebt nog geen manager toegewezen', style: TextStyle(fontSize: 18, color: Colors.grey)),
+                ],
+              ),
             ),
           );
         },
