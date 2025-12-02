@@ -478,7 +478,7 @@ class _DesktopLayoutState extends State<DesktopLayout> {
               if (selected == e.role) return;
 
               try {
-                await changeUserRole(e.uuid, selected);  // 一行搞定
+                await changeUserRole(e.uuid, selected); 
 
                 ScaffoldMessenger.of(context).showSnackBar(
                   SnackBar(content: Text('Role updated to: $selected')),
@@ -497,7 +497,6 @@ class _DesktopLayoutState extends State<DesktopLayout> {
     );
   }
 
-// Fixed _showInviteDialog - correct function invoke with body parameter
   void _showInviteDialog() {
     final emailCtrl = TextEditingController();
     final nameCtrl = TextEditingController();
@@ -576,21 +575,21 @@ class _DesktopLayoutState extends State<DesktopLayout> {
     return Scaffold(
       backgroundColor: Colors.transparent,
       body: BackgroundContainer(
-        child: Stack(                                   // 用 Stack 解决底部溢出
+        child: Stack(                               
           children: [
-            // 主内容区域（Header + 内容）
+            // main content
             Column(
               children: [
                 HeaderBar(),
 
-                // 主内容：左侧操作栏 + 右侧员工列表
+                // body area
                 Expanded(
                   child: Padding(
                     padding: const EdgeInsets.all(32),
                     child: Row(
                       crossAxisAlignment: CrossAxisAlignment.start,
                       children: [
-                        // 左侧：添加员工大按钮
+                        // left side: action card
                         SizedBox(
                           width: 340,
                           child: Card(
@@ -624,14 +623,14 @@ class _DesktopLayoutState extends State<DesktopLayout> {
 
                         const SizedBox(width: 32),
 
-                        // 右侧：员工列表
+                        // right side: employee list
                         Expanded(
                           child: Card(
                             elevation: 4,
                             child: Column(
                               crossAxisAlignment: CrossAxisAlignment.start,
                               children: [
-                                // 标题
+                                
                                 const Padding(
                                   padding: EdgeInsets.fromLTRB(32, 32, 32, 16),
                                   child: Text(
@@ -640,7 +639,7 @@ class _DesktopLayoutState extends State<DesktopLayout> {
                                   ),
                                 ),
 
-                                // 列表区域（自带滚动）
+                                // list area
                                 Expanded(
                                   child: _loading
                                       ? const Center(child: CircularProgressIndicator())
@@ -659,7 +658,7 @@ class _DesktopLayoutState extends State<DesktopLayout> {
                                                 final e = _employees[i];
                                                 return Card(
                                                   child: ListTile(
-                                                    contentPadding: const EdgeInsets.symmetric(horizontal: 20, vertical: 8), // 直接加垂直内边距
+                                                    contentPadding: const EdgeInsets.symmetric(horizontal: 20, vertical: 8),
                                                     leading: CircleAvatar(
                                                       radius: 28,
                                                       child: Text(
@@ -710,7 +709,7 @@ class _DesktopLayoutState extends State<DesktopLayout> {
               ],
             ),
 
-            // 底部导航栏浮在最上层（不再参与 Column 布局）
+            
             const Align(
               alignment: Alignment.bottomCenter,
               child: Padding(
