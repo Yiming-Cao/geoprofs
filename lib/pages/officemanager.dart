@@ -70,130 +70,44 @@ class Employee {
   });
 }
 
-// Load employees - fully in English
 Future<List<Employee>> loadEmployees() async {
   try {
-    // First fetch permission rows (user_uuid + role)
-    final dynamic raw = await supabase
-      .from('permissions')
-      .select('user_uuid, role')
-      .order('updated_at', ascending: false);
+    final response = await supabase.functions.invoke('super-processor');
+    final data = response.data as Map<String, dynamic>?;
 
-    List rows = [];
-
-    if (raw is List) {
-      rows = List.from(raw);
-    } else if (raw is Map) {
-      // PostgREST style object { data: [...], error: ... }
-      if (raw.containsKey('error') && raw['error'] != null) {
-        rows = [];
-      } else if (raw.containsKey('data')) {
-        final d = raw['data'];
-        if (d is List) rows = List.from(d);
-        else if (d != null) rows = [d];
-      } else {
-        rows = [raw];
-      }
-    } else {
-      rows = [];
+    if (data == null || data['users'] == null) {
+      debugPrint('loadEmployees: no users returned');
+      return [];
     }
 
-    debugPrint('loadEmployees: fetched ${rows.length} permission rows');
+    final List<dynamic> rawUsers = data['users'];
 
-    // collect all user uuids so we can fetch profiles in one batch
-    final userIds = <String>[];
-    for (final r in rows) {
-      try {
-        final map = Map<String, dynamic>.from(r as Map);
-        final u = map['user_uuid']?.toString();
-        if (u != null && u.isNotEmpty) userIds.add(u);
-      } catch (_) {}
-    }
+    debugPrint('loadEmployees: fetched ${rawUsers.length} users');
 
-    // query profiles for display_name if table exists and there are ids
-    final Map<String, String> nameById = {};
-    if (userIds.isNotEmpty) {
-      try {
-        final dynamic builder = supabase.from('users').select('id,name');
-        dynamic profRes;
-        // call common method names dynamically to support different SDK versions
-        try {
-          profRes = await (builder as dynamic).inFilter('id', userIds);
-        } catch (_) {
-          try {
-            profRes = await (builder as dynamic).in_('id', userIds);
-          } catch (_) {
-            // fallback to selecting then filtering client-side
-            profRes = await builder;
-          }
-        }
+    final employees = rawUsers.map((u) {
+      final map = Map<String, dynamic>.from(u);
 
-        List profRows = [];
-        if (profRes is List) {
-          profRows = List.from(profRes);
-        } else if (profRes is Map) {
-          if (profRes.containsKey('data')) {
-            final d = profRes['data'];
-            if (d is List) profRows = List.from(d);
-            else if (d != null) profRows = [d];
-          } else if (profRes.isNotEmpty) {
-            // single-row map
-            profRows = [profRes];
-          }
-        }
-
-        for (final p in profRows) {
-          try {
-            final pm = Map<String, dynamic>.from(p as Map);
-            final id = pm['id']?.toString();
-            final display = pm['name']?.toString() ?? '';
-            if (id != null && id.isNotEmpty) nameById[id] = display;
-          } catch (_) {}
-        }
-      } catch (e) {
-        debugPrint('profiles lookup error: $e');
-      }
-    }
-
-    // build employees list (keep entries with a name even if uuid is missing)
-    final employees = rows.map((row) {
-      final r = Map<String, dynamic>.from(row as Map);
-      final uuid = r['user_uuid']?.toString() ?? '';
-      final role = (r['role'] as String?)?.toLowerCase() ?? 'worker';
-
-      String name = 'No name set';
-      // Prefer name from profiles lookup (nameById), otherwise try users field or fallback
-      final uid = r['user_uuid']?.toString() ?? '';
-      if (uid.isNotEmpty && nameById.containsKey(uid) && nameById[uid]!.isNotEmpty) {
-        name = nameById[uid]!;
-      } else {
-        final usersField = r['users'];
-        if (usersField is Map && usersField['name'] != null) {
-          name = usersField['name'].toString();
-        } else if (usersField is List && usersField.isNotEmpty) {
-          final u = usersField.first;
-          if (u is Map && u['name'] != null) name = u['name'].toString();
-        }
-      }
-
-      return Employee(uuid: uuid, name: name, role: role);
-    }).where((e) => e.uuid.isNotEmpty || e.name.isNotEmpty).toList();
-
-    debugPrint('loadEmployees: collected userIds=${userIds.length} profiles=${nameById.length} employees=${employees.length}');
+      return Employee(
+        uuid: map['id']?.toString() ?? '',
+        name: map['user_metadata']?['display_name']?.toString() ?? '',
+        role: map['role']?.toString() ?? '',
+      );
+    }).toList();
 
     return employees;
-  } catch (e) {
-    debugPrint('Failed to load employees: $e');
+  } catch (e, st) {
+    debugPrint('loadEmployees ERROR: $e\n$st');
     return [];
   }
 }
 
+
 Future<void> changeUserRole(String userUuid, String newRole) async {
   final response = await supabase.functions.invoke(
-    'change-employee-role',  
+    'super-api',  
     body: {
-      'target_uuid': userUuid,
-      'new_role': newRole,
+      'user_id': userUuid,
+      'role': newRole,
     },
   );
 
@@ -540,8 +454,8 @@ class _DesktopLayoutState extends State<DesktopLayout> {
 
               try {
                 final response = await supabase.functions.invoke(
-                  'add-employee',
-                  body: {'email': email, 'name': name},
+                  'quick-api',
+                  body: {'email': email, 'name': name, 'password': 'temp123456', 'role': 'worker'},
                   headers: {
                     'Content-Type': 'application/json',
                   },
