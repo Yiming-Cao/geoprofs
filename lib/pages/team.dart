@@ -1,45 +1,110 @@
+import 'dart:convert';
 import 'package:flutter/material.dart';
-import 'package:flutter/foundation.dart';
 import 'package:flutter/foundation.dart' show defaultTargetPlatform, TargetPlatform;
 import 'package:supabase_flutter/supabase_flutter.dart';
+
+final supabase = Supabase.instance.client;
+
+class Team {
+  final String id;
+  final DateTime createdAt;
+  final List<String> users;
+  final String manager;
+
+  const Team({
+    required this.id,
+    required this.createdAt,
+    required this.users,
+    required this.manager,
+  });
+
+  factory Team.fromJson(Map<String, dynamic> json) {
+    List<String> usersList = [];
+
+    final raw = json['users'];
+
+    if (raw is List) {
+      usersList = raw.cast<String>();
+    } else if (raw is String) {
+      try {
+        final parsed = List<dynamic>.from(
+          raw.trim().startsWith('[')
+              ? (List<dynamic>.from(jsonDecode(raw)))
+              : raw.split(',').map((s) => s.trim().replaceAll('"', '').replaceAll("'", "")),
+        );
+        usersList = parsed.cast<String>();
+      } catch (_) {
+        debugPrint('Kon users niet parsen: $raw');
+      }
+    }
+
+    final managerId = json['manager'] as String?;
+    if (managerId != null && !usersList.contains(managerId)) {
+      usersList.add(managerId);
+    }
+
+    debugPrint('Team.fromJson → id: ${json['id']}, users: $usersList, manager: $managerId');
+
+    return Team(
+      id: json['id'] as String,
+      createdAt: DateTime.parse(json['created_at'] as String),
+      users: usersList,
+      manager: managerId ?? '',
+    );
+  }
+}
+
+class TeamDisplayData {
+  final String role;
+  final List<Team> myTeams;
+  final List<Team> managedTeams;
+  final List<Team>? allTeams;
+  final String? currentUserId;
+
+  const TeamDisplayData({
+    required this.role,
+    required this.myTeams,
+    required this.managedTeams,
+    this.allTeams,
+    this.currentUserId,
+  });
+
+  factory TeamDisplayData.notLoggedIn() {
+    return const TeamDisplayData(
+      role: 'Niet ingelogd',
+      myTeams: [],
+      managedTeams: [],
+      currentUserId: null,
+    );
+  }
+}
 
 class TeamPage extends StatelessWidget {
   const TeamPage({super.key});
 
   @override
   Widget build(BuildContext context) {
-    if (defaultTargetPlatform == TargetPlatform.android ||
-        defaultTargetPlatform == TargetPlatform.iOS) {
-      return const MobileLayout();
-    }
-    return const DesktopLayout();
+    final isMobile = defaultTargetPlatform == TargetPlatform.android ||
+        defaultTargetPlatform == TargetPlatform.iOS;
+    return isMobile ? const MobileLayout() : const DesktopLayout();
   }
 }
 
-class MobileLayout extends StatefulWidget {
+class MobileLayout extends StatelessWidget {
   const MobileLayout({super.key});
-  @override
-  State<MobileLayout> createState() => _MobileLayoutState();
-}
-
-class _MobileLayoutState extends State<MobileLayout> {
-  @override
-  Widget build(BuildContext context) {
-    return Scaffold(
-      appBar: AppBar(title: const Text('Team Page - Mobile')),
-      body: const Center(child: Text('Mobile komt later')),
-    );
-  }
+  @override Widget build(BuildContext context) => Scaffold(
+        appBar: AppBar(title: const Text('Team – Mobiel')),
+        body: const Center(child: Text('Mobiel komt later')),
+      );
 }
 
 class DesktopLayout extends StatefulWidget {
   const DesktopLayout({super.key});
-  @override
-  State<DesktopLayout> createState() => _DesktopLayoutState();
+  @override State<DesktopLayout> createState() => _DesktopLayoutState();
 }
 
 class _DesktopLayoutState extends State<DesktopLayout> {
-  late final Future<Map<String, dynamic>> teamInfoFuture;
+  late Future<TeamDisplayData> teamInfoFuture;
 
   @override
   void initState() {
@@ -47,79 +112,88 @@ class _DesktopLayoutState extends State<DesktopLayout> {
     teamInfoFuture = _loadTeamInfo();
   }
 
-  Future<Map<String, dynamic>> _loadTeamInfo() async {
-    final user = Supabase.instance.client.auth.currentUser;
-    if (user == null) {
-      return {
-        'role': 'Niet ingelogd',
-        'isManager': false,
-        'managers': <Map<String, String>>[],
-      };
-    }
+  Future<TeamDisplayData> _loadTeamInfo() async {
+    final user = supabase.auth.currentUser;
+    if (user == null) return TeamDisplayData.notLoggedIn();
 
-    final userId = user.id;
-    final roleData = await Supabase.instance.client
+    final String userId = user.id;
+    debugPrint('Ingelogde user UUID: $userId');
+
+    final roleData = await supabase
         .from('permissions')
         .select('role')
         .eq('user_uuid', userId)
         .maybeSingle();
+    final String role = roleData?['role'] as String? ?? 'Werknemer';
 
-    final String role = roleData?['role'] ?? 'Geen rol gevonden';
+    final response = await supabase.from('teams').select();
+    final List<Team> allTeams =
+        (response as List).map((json) => Team.fromJson(json)).toList();
 
-    
-    final teamData = await Supabase.instance.client
-        .from('teams')
-        .select('manager')             
-        .eq('id', userId)             
-        .maybeSingle();
+    final myTeams = allTeams.where((t) => t.users.contains(userId)).toList();
+    final managedTeams = allTeams.where((t) => t.manager == userId).toList();
 
-    bool isManager = false;
-    List<Map<String, String>> managersList = [];
+    debugPrint('myTeams: ${myTeams.length} | managedTeams: ${managedTeams.length}');
 
-    if (teamData != null) {
-      final List<dynamic> managerUuids = teamData['manager'] ?? [];
+    return TeamDisplayData(
+      role: role,
+      myTeams: myTeams,
+      managedTeams: managedTeams,
+      allTeams: role.toLowerCase().contains('office_manager') ? allTeams : null,
+      currentUserId: userId,
+    );
+  }
 
-      isManager = managerUuids.contains(userId);
+  Future<List<Map<String, dynamic>>> _fetchTeamMembers(List<String> userIds) async {
+    if (userIds.isEmpty) return [];
 
-      if (managerUuids.isNotEmpty) {
-        final managersData = await Supabase.instance.client
-            .from('auth.users')
-            .select('id, email, raw_user_meta_data')
-            .inFilter('id', managerUuids.cast<String>());
+    try {
+      final response = await supabase
+          .from('user_profiles')
+          .select('id, email, name')
+          .inFilter('id', userIds);
 
-        managersList = managersData.map((m) {
-          final meta = m['raw_user_meta_data'] as Map<String, dynamic>?;
-          final name = meta?['full_name'] ?? meta?['name'] ?? 'Onbekende gebruiker';
-          return {
-            'name': name as String,
-            'email': m['email'] as String,
-          };
-        }).toList().cast<Map<String, String>>();
+      final List<Map<String, dynamic>> results = (response as List)
+          .cast<Map<String, dynamic>>();
+
+      final Map<String, Map<String, dynamic>> map = {
+        for (var r in results) r['id'] as String: r
+      };
+
+      for (final id in userIds) {
+        map.putIfAbsent(id, () => {'id': id, 'name': 'Onbekend', 'email': 'Geen e-mail'});
       }
-    }
 
-    return {
-      'role': role,
-      'isManager': isManager,
-      'managers': managersList,
-    };
+      return userIds.map((id) => map[id]!).toList();
+    } catch (e) {
+      debugPrint('Fout bij ophalen profielen: $e');
+      return userIds
+          .map((id) => {'id': id, 'name': 'Fout bij laden', 'email': ''})
+          .toList();
+    }
   }
 
   Color _colorForRole(String role) {
-    switch (role.toLowerCase()) {
-      case 'admin': return Colors.red;
-      case 'office_manager': return const Color.fromARGB(255, 140, 0, 255);
-      case 'manager': return Colors.orange;
-      case 'worker': return Colors.green;
-      default: return Colors.grey;
-    }
+    final r = role.toLowerCase();
+    if (r.contains('office_manager') || r.contains('admin'))
+      return Colors.deepPurple;
+    if (r.contains('manager')) return Colors.orange;
+    return Colors.green;
   }
 
   @override
   Widget build(BuildContext context) {
     return Scaffold(
-      appBar: AppBar(title: const Text('Team Page - Desktop')),
-      body: FutureBuilder<Map<String, dynamic>>(
+      appBar: AppBar(
+        title: const Text('Mijn Team'),
+        actions: [
+          IconButton(
+            icon: const Icon(Icons.refresh),
+            onPressed: () => setState(() => teamInfoFuture = _loadTeamInfo()),
+          )
+        ],
+      ),
+      body: FutureBuilder<TeamDisplayData>(
         future: teamInfoFuture,
         builder: (context, snapshot) {
           if (snapshot.connectionState == ConnectionState.waiting) {
@@ -128,13 +202,8 @@ class _DesktopLayoutState extends State<DesktopLayout> {
           if (snapshot.hasError) {
             return Center(child: Text('Fout: ${snapshot.error}'));
           }
-
-          final data = snapshot.data!;
-          final String role = data['role'];
-          bool isManager = data['isManager'];
-          List<Map<String, String>> managers = data['managers'];
-
-          final Color roleColor = _colorForRole(role);
+          final data = snapshot.data ?? TeamDisplayData.notLoggedIn();
+          final roleColor = _colorForRole(data.role);
 
           return Center(
             child: SingleChildScrollView(
@@ -151,42 +220,76 @@ class _DesktopLayoutState extends State<DesktopLayout> {
                       borderRadius: BorderRadius.circular(30),
                     ),
                     child: Text(
-                      role.toUpperCase(),
-                      style: TextStyle(fontSize: 48, fontWeight: FontWeight.bold, color: roleColor),
+                      data.role.toUpperCase(),
+                      style: TextStyle(fontSize: 28, fontWeight: FontWeight.bold, color: roleColor),
                     ),
                   ),
                   const SizedBox(height: 50),
-
-                  if (isManager)
-                    Container(
-                      padding: const EdgeInsets.all(20),
-                      decoration: BoxDecoration(
-                        color: Colors.orange.shade100,
-                        borderRadius: BorderRadius.circular(16),
-                        border: Border.all(color: Colors.orange, width: 3),
-                      ),
-                      child: const Text('Jij bent manager van dit team', style: TextStyle(fontSize: 22, fontWeight: FontWeight.bold)),
-                    ),
-
-                  const SizedBox(height: 40),
-
-                  if (managers.isNotEmpty) ...[
-                    const Text('Je manager(s):', style: TextStyle(fontSize: 24, fontWeight: FontWeight.bold)),
-                    const SizedBox(height: 12),
-                    ...managers.map((m) => Card(
-                          child: ListTile(
-                            leading: CircleAvatar(backgroundColor: Colors.orange.shade200, child: const Icon(Icons.person)),
-                            title: Text(m['name']!, style: const TextStyle(fontWeight: FontWeight.w600)),
-                            subtitle: Text(m['email']!),
-                          ),
-                        )),
-                  ] else if (!isManager)
-                    const Text('Je hebt nog geen manager toegewezen', style: TextStyle(fontSize: 18, color: Colors.grey)),
+                  if (data.managedTeams.isNotEmpty) ...[
+                    const Text('Jij bent manager van:', style: TextStyle(fontSize: 28, fontWeight: FontWeight.bold)),
+                    const SizedBox(height: 20),
+                    ...data.managedTeams.map((team) => _buildTeamCard(team, true)),
+                  ]
+                  else if (data.myTeams.isNotEmpty) ...[
+                    const Text('Jij bent teamlid in:', style: TextStyle(fontSize: 28, fontWeight: FontWeight.bold)),
+                    const SizedBox(height: 20),
+                    ...data.myTeams.map((team) => _buildTeamCard(team, team.manager == data.currentUserId)),
+                  ]
+                  else ...[
+                    const Text('Je zit nog niet in een team', style: TextStyle(fontSize: 20, color: Colors.grey)),
+                  ],
                 ],
               ),
             ),
           );
         },
+      ),
+    );
+  }
+
+  Widget _buildTeamCard(Team team, bool isManager) {
+    return Card(
+      margin: const EdgeInsets.only(bottom: 20),
+      elevation: 6,
+      child: ExpansionTile(
+        leading: Icon(Icons.group, color: isManager ? Colors.orange : Colors.blue, size: 40),
+        title: Text(
+          isManager
+              ? 'Jouw team (${team.users.length} leden)'
+              : '${team.users.length} teamleden',
+          style: const TextStyle(fontSize: 18, fontWeight: FontWeight.bold),
+        ),
+        subtitle: Text(isManager ? 'Jij bent de manager' : 'Manager: ${team.manager.substring(0, 8)}...'),
+        children: [
+          FutureBuilder<List<Map<String, dynamic>>>(
+            future: _fetchTeamMembers(team.users),
+            builder: (context, snapshot) {
+              if (snapshot.connectionState == ConnectionState.waiting) {
+                return const Padding(padding: EdgeInsets.all(20), child: CircularProgressIndicator());
+              }
+
+              final members = snapshot.data ?? [];
+
+              return Column(
+                children: members.map((m) {
+                  final isCurrentUser = m['id'] == supabase.auth.currentUser?.id;
+                  return ListTile(
+                    leading: CircleAvatar(
+                      backgroundColor: isCurrentUser ? Colors.orange : Colors.grey,
+                      child: Text((m['name'] as String?)?.substring(0, 1).toUpperCase() ?? '?'),
+                    ),
+                    title: Text(
+                      m['name']?.toString() ?? 'Onbekend',
+                      style: TextStyle(fontWeight: isCurrentUser ? FontWeight.bold : FontWeight.normal),
+                    ),
+                    subtitle: Text(m['email']?.toString() ?? 'Geen e-mail'),
+                    trailing: isCurrentUser ? const Text('JIJ', style: TextStyle(color: Colors.orange, fontWeight: FontWeight.bold)) : null,
+                  );
+                }).toList(),
+              );
+            },
+          ),
+        ],
       ),
     );
   }
