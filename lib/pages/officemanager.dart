@@ -25,7 +25,9 @@ class OfficeManagerDashboard extends StatelessWidget {
 
       if (data == null) return false;
       final role = (data['role'] as String?)?.toLowerCase() ?? '';
-      return role == 'office_manager';
+      debugPrint('OfficeManager check: user role = $role');
+      // allow both office_manager and admin users to access this dashboard
+      return role == 'office_manager' || role == 'admin';
     } catch (e) {
       debugPrint('Role check error: $e');
       return false;
@@ -71,22 +73,132 @@ class Employee {
 // Load employees - fully in English
 Future<List<Employee>> loadEmployees() async {
   try {
-    final response = await supabase
-        .from('permissions')
-        .select('user_uuid, role, users:users!users_id_fkey(name)')
-        .order('updated_at', ascending: false);
+    // First fetch permission rows (user_uuid + role)
+    final dynamic raw = await supabase
+      .from('permissions')
+      .select('user_uuid, role')
+      .order('updated_at', ascending: false);
 
-    return (response as List).map((row) {
-      final uuid = row['user_uuid'] as String;
-      final role = (row['role'] as String?)?.toLowerCase() ?? 'worker';
-      final userInfo = row['users'] as Map<String, dynamic>?;
-      final name = (userInfo?['name'] as String?) ?? 'No name set';
+    List rows = [];
+
+    if (raw is List) {
+      rows = List.from(raw);
+    } else if (raw is Map) {
+      // PostgREST style object { data: [...], error: ... }
+      if (raw.containsKey('error') && raw['error'] != null) {
+        rows = [];
+      } else if (raw.containsKey('data')) {
+        final d = raw['data'];
+        if (d is List) rows = List.from(d);
+        else if (d != null) rows = [d];
+      } else {
+        rows = [raw];
+      }
+    } else {
+      rows = [];
+    }
+
+    debugPrint('loadEmployees: fetched ${rows.length} permission rows');
+
+    // collect all user uuids so we can fetch profiles in one batch
+    final userIds = <String>[];
+    for (final r in rows) {
+      try {
+        final map = Map<String, dynamic>.from(r as Map);
+        final u = map['user_uuid']?.toString();
+        if (u != null && u.isNotEmpty) userIds.add(u);
+      } catch (_) {}
+    }
+
+    // query profiles for display_name if table exists and there are ids
+    final Map<String, String> nameById = {};
+    if (userIds.isNotEmpty) {
+      try {
+        final dynamic builder = supabase.from('users').select('id,name');
+        dynamic profRes;
+        // call common method names dynamically to support different SDK versions
+        try {
+          profRes = await (builder as dynamic).inFilter('id', userIds);
+        } catch (_) {
+          try {
+            profRes = await (builder as dynamic).in_('id', userIds);
+          } catch (_) {
+            // fallback to selecting then filtering client-side
+            profRes = await builder;
+          }
+        }
+
+        List profRows = [];
+        if (profRes is List) {
+          profRows = List.from(profRes);
+        } else if (profRes is Map) {
+          if (profRes.containsKey('data')) {
+            final d = profRes['data'];
+            if (d is List) profRows = List.from(d);
+            else if (d != null) profRows = [d];
+          } else if (profRes.isNotEmpty) {
+            // single-row map
+            profRows = [profRes];
+          }
+        }
+
+        for (final p in profRows) {
+          try {
+            final pm = Map<String, dynamic>.from(p as Map);
+            final id = pm['id']?.toString();
+            final display = pm['name']?.toString() ?? '';
+            if (id != null && id.isNotEmpty) nameById[id] = display;
+          } catch (_) {}
+        }
+      } catch (e) {
+        debugPrint('profiles lookup error: $e');
+      }
+    }
+
+    // build employees list (keep entries with a name even if uuid is missing)
+    final employees = rows.map((row) {
+      final r = Map<String, dynamic>.from(row as Map);
+      final uuid = r['user_uuid']?.toString() ?? '';
+      final role = (r['role'] as String?)?.toLowerCase() ?? 'worker';
+
+      String name = 'No name set';
+      // Prefer name from profiles lookup (nameById), otherwise try users field or fallback
+      final uid = r['user_uuid']?.toString() ?? '';
+      if (uid.isNotEmpty && nameById.containsKey(uid) && nameById[uid]!.isNotEmpty) {
+        name = nameById[uid]!;
+      } else {
+        final usersField = r['users'];
+        if (usersField is Map && usersField['name'] != null) {
+          name = usersField['name'].toString();
+        } else if (usersField is List && usersField.isNotEmpty) {
+          final u = usersField.first;
+          if (u is Map && u['name'] != null) name = u['name'].toString();
+        }
+      }
 
       return Employee(uuid: uuid, name: name, role: role);
-    }).toList();
+    }).where((e) => e.uuid.isNotEmpty || e.name.isNotEmpty).toList();
+
+    debugPrint('loadEmployees: collected userIds=${userIds.length} profiles=${nameById.length} employees=${employees.length}');
+
+    return employees;
   } catch (e) {
     debugPrint('Failed to load employees: $e');
     return [];
+  }
+}
+
+Future<void> changeUserRole(String userUuid, String newRole) async {
+  final response = await supabase.functions.invoke(
+    'change-employee-role',  
+    body: {
+      'target_uuid': userUuid,
+      'new_role': newRole,
+    },
+  );
+
+  if (response.data['error'] != null) {
+    throw response.data['error']!;
   }
 }
 
@@ -117,6 +229,55 @@ class _MobileLayoutState extends State<MobileLayout> {
     });
   }
 
+  
+
+  // Desktop dialog handler intentionally implemented in Desktop state class
+
+  // _showChangeRoleDialogDesktop has been moved to the Desktop state class
+
+  Future<void> _showChangeRoleDialog(Employee e) async {
+    final roles = ['worker', 'manager', 'office_manager', 'admin'];
+    String selected = e.role;
+
+    await showDialog<void>(
+      context: context,
+      builder: (ctx) => AlertDialog(
+        title: Text('Change role for ${e.name}'),
+        content: StatefulBuilder(builder: (ctx2, setState) {
+          return DropdownButtonFormField<String>(
+            value: selected,
+            items: roles.map((r) => DropdownMenuItem(value: r, child: Text(r))).toList(),
+            onChanged: (v) => setState(() => selected = v ?? selected),
+            decoration: const InputDecoration(labelText: 'Role'),
+          );
+        }),
+        actions: [
+          TextButton(onPressed: () => Navigator.pop(ctx), child: const Text('Cancel')),
+          ElevatedButton(
+            onPressed: () async {
+              Navigator.pop(ctx);
+              if (selected == e.role) return;
+              try {
+                // Try update first
+                final upd = await supabase.from('permissions').update({'role': selected}).eq('user_uuid', e.uuid);
+                // If update returned empty or no match, insert
+                if (upd == null || (upd is List && upd.isEmpty) || (upd is Map && upd.containsKey('error') && upd['error'] != null)) {
+                  await supabase.from('permissions').insert({'user_uuid': e.uuid, 'role': selected});
+                }
+                ScaffoldMessenger.of(context).showSnackBar(SnackBar(content: Text('Role updated: $selected')));
+                await _refresh();
+              } catch (err) {
+                debugPrint('Change role failed: $err');
+                ScaffoldMessenger.of(context).showSnackBar(SnackBar(content: Text('Failed to update role: $err')));
+              }
+            },
+            child: const Text('Save'),
+          ),
+        ],
+      ),
+    );
+  }
+
   void _showInviteDialog() {
     final emailCtrl = TextEditingController();
     final nameCtrl = TextEditingController();
@@ -139,6 +300,8 @@ class _MobileLayoutState extends State<MobileLayout> {
             ],
           ),
         ),
+
+        // (desktop change-role dialog removed from here; implemented in Desktop state class)
         actions: [
           TextButton(onPressed: () => Navigator.pop(ctx), child: const Text('Cancel')),
           ElevatedButton(
@@ -182,6 +345,10 @@ class _MobileLayoutState extends State<MobileLayout> {
     );
   }
 
+  // _showChangeRoleDialogDesktop removed from mobile state — implemented in Desktop state
+
+  // desktop-role-dialog was accidentally defined here, moved into Desktop state
+
   @override
   Widget build(BuildContext context) {
     return Scaffold(
@@ -220,8 +387,19 @@ class _MobileLayoutState extends State<MobileLayout> {
                                   leading: CircleAvatar(child: Text(e.name.isNotEmpty ? e.name[0] : '?')),
                                   title: Text(e.name),
                                   subtitle: Text(e.role),
-                                  trailing: Text(e.uuid.substring(0, 8),
-                                      style: const TextStyle(fontSize: 10, color: Colors.grey)),
+                                  trailing: Column(
+                                    mainAxisSize: MainAxisSize.min,
+                                    crossAxisAlignment: CrossAxisAlignment.end,
+                                    children: [
+                                      Text(e.uuid.substring(0, 8), style: const TextStyle(fontSize: 10, color: Colors.grey)),
+                                      const SizedBox(height: 6),
+                                      ElevatedButton(
+                                        onPressed: () => _showChangeRoleDialog(e),
+                                        child: const Text('Change role'),
+                                        style: ElevatedButton.styleFrom(backgroundColor: Colors.blueGrey, padding: const EdgeInsets.symmetric(horizontal: 8, vertical: 6), textStyle: const TextStyle(fontSize: 12)),
+                                      ),
+                                    ],
+                                  ),
                                 ),
                               )),
                         const SizedBox(height: 80),
@@ -272,7 +450,54 @@ class _DesktopLayoutState extends State<DesktopLayout> {
     });
   }
 
-  // Fixed _showInviteDialog - correct function invoke with body parameter
+  Future<void> _showChangeRoleDialogDesktop(Employee e) async {
+    final roles = ['worker', 'manager', 'office_manager', 'admin'];
+    String selected = e.role;
+
+    await showDialog<void>(
+      context: context,
+      builder: (ctx) => AlertDialog(
+        title: Text('Change role for ${e.name}'),
+        content: StatefulBuilder(
+          builder: (ctx2, setStateDialog) {
+            return DropdownButtonFormField<String>(
+              value: selected,
+              items: roles
+                  .map((r) => DropdownMenuItem(value: r, child: Text(r)))
+                  .toList(),
+              onChanged: (v) => setStateDialog(() => selected = v ?? selected),
+              decoration: const InputDecoration(labelText: 'Role'),
+            );
+          },
+        ),
+        actions: [
+          TextButton(onPressed: () => Navigator.pop(ctx), child: const Text('Cancel')),
+          ElevatedButton(
+            onPressed: () async {
+              Navigator.pop(ctx);
+              if (selected == e.role) return;
+
+              try {
+                await changeUserRole(e.uuid, selected);  // 一行搞定
+
+                ScaffoldMessenger.of(context).showSnackBar(
+                  SnackBar(content: Text('Role updated to: $selected')),
+                );
+                _refresh();
+              } catch (err) {
+                ScaffoldMessenger.of(context).showSnackBar(
+                  SnackBar(content: Text('Failed: $err')),
+                );
+              }
+            },
+            child: const Text('Save'),
+          ),
+        ],
+      ),
+    );
+  }
+
+// Fixed _showInviteDialog - correct function invoke with body parameter
   void _showInviteDialog() {
     final emailCtrl = TextEditingController();
     final nameCtrl = TextEditingController();
@@ -351,78 +576,148 @@ class _DesktopLayoutState extends State<DesktopLayout> {
     return Scaffold(
       backgroundColor: Colors.transparent,
       body: BackgroundContainer(
-        child: Column(
+        child: Stack(                                   // 用 Stack 解决底部溢出
           children: [
-            HeaderBar(),
-            Expanded(
-              child: Padding(
-                padding: const EdgeInsets.all(32),
-                child: Row(
-                  children: [
-                    SizedBox(
-                      width: 340,
-                      child: Card(
-                        child: Padding(
-                          padding: const EdgeInsets.all(32),
-                          child: Column(
-                            children: [
-                              const Text('Employee manager', style: TextStyle(fontSize: 28, fontWeight: FontWeight.bold)),
-                              const SizedBox(height: 40),
-                              ElevatedButton.icon(
-                                onPressed: _showInviteDialog,
-                                icon: const Icon(Icons.person_add, size: 32),
-                                label: const Text('Add new employee', style: TextStyle(fontSize: 20)),
-                                style: ElevatedButton.styleFrom(
-                                  backgroundColor: Colors.green,
-                                  padding: const EdgeInsets.symmetric(vertical: 20),
-                                  minimumSize: const Size(double.infinity, 60),
-                                ),
+            // 主内容区域（Header + 内容）
+            Column(
+              children: [
+                HeaderBar(),
+
+                // 主内容：左侧操作栏 + 右侧员工列表
+                Expanded(
+                  child: Padding(
+                    padding: const EdgeInsets.all(32),
+                    child: Row(
+                      crossAxisAlignment: CrossAxisAlignment.start,
+                      children: [
+                        // 左侧：添加员工大按钮
+                        SizedBox(
+                          width: 340,
+                          child: Card(
+                            child: Padding(
+                              padding: const EdgeInsets.all(32),
+                              child: Column(
+                                children: [
+                                  const Text(
+                                    'Employee manager',
+                                    style: TextStyle(fontSize: 28, fontWeight: FontWeight.bold),
+                                  ),
+                                  const SizedBox(height: 40),
+                                  ElevatedButton.icon(
+                                    onPressed: _showInviteDialog,
+                                    icon: const Icon(Icons.person_add, size: 32),
+                                    label: const Text(
+                                      'Add new employee',
+                                      style: TextStyle(fontSize: 20),
+                                    ),
+                                    style: ElevatedButton.styleFrom(
+                                      backgroundColor: Colors.green,
+                                      padding: const EdgeInsets.symmetric(vertical: 20),
+                                      minimumSize: const Size(double.infinity, 64),
+                                    ),
+                                  ),
+                                ],
                               ),
-                            ],
+                            ),
                           ),
                         ),
-                      ),
-                    ),
-                    const SizedBox(width: 32),
-                    Expanded(
-                      child: Card(
-                        child: Padding(
-                          padding: const EdgeInsets.all(32),
-                          child: Column(
-                            crossAxisAlignment: CrossAxisAlignment.start,
-                            children: [
-                              const Text('Employee list', style: TextStyle(fontSize: 26, fontWeight: FontWeight.bold)),
-                              const SizedBox(height: 20),
-                              if (_loading) const Center(child: CircularProgressIndicator()),
-                              if (!_loading && _employees.isEmpty) const Center(child: Text('No employee', style: TextStyle(fontSize: 20))),
-                              if (!_loading && _employees.isNotEmpty)
-                                Expanded(
-                                  child: ListView.builder(
-                                    itemCount: _employees.length,
-                                    itemBuilder: (_, i) {
-                                      final e = _employees[i];
-                                      return Card(
-                                        margin: const EdgeInsets.symmetric(vertical: 8),
-                                        child: ListTile(
-                                          leading: CircleAvatar(radius: 28, child: Text(e.name.isNotEmpty ? e.name[0] : '?', style: const TextStyle(fontSize: 20))),
-                                          title: Text(e.name, style: const TextStyle(fontSize: 20, fontWeight: FontWeight.w600)),
-                                          subtitle: Text(e.role, style: const TextStyle(fontSize: 16)),
-                                          trailing: Text(e.uuid.substring(0, 8), style: const TextStyle(fontSize: 12, color: Colors.grey)),
-                                        ),
-                                      );
-                                    },
+
+                        const SizedBox(width: 32),
+
+                        // 右侧：员工列表
+                        Expanded(
+                          child: Card(
+                            elevation: 4,
+                            child: Column(
+                              crossAxisAlignment: CrossAxisAlignment.start,
+                              children: [
+                                // 标题
+                                const Padding(
+                                  padding: EdgeInsets.fromLTRB(32, 32, 32, 16),
+                                  child: Text(
+                                    'Employee list',
+                                    style: TextStyle(fontSize: 26, fontWeight: FontWeight.bold),
                                   ),
                                 ),
-                            ],
+
+                                // 列表区域（自带滚动）
+                                Expanded(
+                                  child: _loading
+                                      ? const Center(child: CircularProgressIndicator())
+                                      : _employees.isEmpty
+                                          ? const Center(
+                                              child: Text(
+                                                'No employees found',
+                                                style: TextStyle(fontSize: 20),
+                                              ),
+                                            )
+                                          : ListView.separated(
+                                              padding: const EdgeInsets.fromLTRB(32, 0, 32, 32),
+                                              itemCount: _employees.length,
+                                              separatorBuilder: (_, __) => const SizedBox(height: 12),
+                                              itemBuilder: (_, i) {
+                                                final e = _employees[i];
+                                                return Card(
+                                                  child: ListTile(
+                                                    contentPadding: const EdgeInsets.symmetric(horizontal: 20, vertical: 8), // 直接加垂直内边距
+                                                    leading: CircleAvatar(
+                                                      radius: 28,
+                                                      child: Text(
+                                                        e.name.isNotEmpty ? e.name[0].toUpperCase() : '?',
+                                                        style: const TextStyle(fontSize: 22, fontWeight: FontWeight.bold),
+                                                      ),
+                                                    ),
+                                                    title: Text(
+                                                      e.name,
+                                                      style: const TextStyle(fontSize: 20, fontWeight: FontWeight.w600),
+                                                    ),
+                                                    subtitle: Text(
+                                                      e.role,
+                                                      style: const TextStyle(fontSize: 16),
+                                                    ),
+                                                    trailing: Column(
+                                                      mainAxisSize: MainAxisSize.min,
+                                                      crossAxisAlignment: CrossAxisAlignment.end,
+                                                      children: [
+                                                        Text(
+                                                          e.uuid.substring(0, 8),
+                                                          style: const TextStyle(fontSize: 11, color: Colors.grey),
+                                                        ),
+                                                        ElevatedButton(
+                                                          onPressed: () => _showChangeRoleDialogDesktop(e),
+                                                          child: const Text('Change role'),
+                                                          style: ElevatedButton.styleFrom(
+                                                            backgroundColor: Colors.blueGrey,
+                                                            padding: const EdgeInsets.symmetric(horizontal: 16, vertical: 8),
+                                                            textStyle: const TextStyle(fontSize: 12),
+                                                          ),
+                                                        ),
+                                                      ],
+                                                    ),
+                                                  ),
+                                                );
+                                              },
+                                            ),
+                                ),
+                              ],
+                            ),
                           ),
                         ),
-                      ),
+                      ],
                     ),
-                  ],
+                  ),
                 ),
+              ],
+            ),
+
+            // 底部导航栏浮在最上层（不再参与 Column 布局）
+            const Align(
+              alignment: Alignment.bottomCenter,
+              child: Padding(
+                padding: EdgeInsets.only(bottom: 24),
+                child: Navbar(),
               ),
             ),
-            const Padding(padding: EdgeInsets.only(bottom: 24), child: Navbar()),
           ],
         ),
       ),
