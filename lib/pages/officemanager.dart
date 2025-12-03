@@ -180,6 +180,42 @@ class _MobileLayoutState extends State<MobileLayout> {
     );
   }
 
+  Future<void> _confirmDeleteUser(Employee e) async {
+    final confirm = await showDialog<bool>(
+      context: context,
+      builder: (ctx) => AlertDialog(
+        title: Text('Delete ${e.name}?'),
+        content: const Text('This will permanently delete the user. Are you sure?'),
+        actions: [
+          TextButton(onPressed: () => Navigator.pop(ctx, false), child: const Text('Cancel')),
+          ElevatedButton(
+            style: ElevatedButton.styleFrom(backgroundColor: Colors.red),
+            onPressed: () => Navigator.pop(ctx, true),
+            child: const Text('Delete'),
+          ),
+        ],
+      ),
+    );
+
+    if (confirm != true) return;
+
+    try {
+      // call your edge function to delete user
+      final resp = await supabase.functions.invoke('delete-user', body: {'user_id': e.uuid});
+
+      if (resp.data == null || resp.data['error'] != null) {
+        final err = resp.data?['error'] ?? 'Unknown error';
+        throw err;
+      }
+
+      if (context.mounted) ScaffoldMessenger.of(context).showSnackBar(SnackBar(content: Text('Deleted ${e.name}')));
+      await _refresh();
+    } catch (err) {
+      debugPrint('Delete user failed: $err');
+      if (context.mounted) ScaffoldMessenger.of(context).showSnackBar(SnackBar(content: Text('Failed to delete user: $err')));
+    }
+  }
+
   void _showInviteDialog() {
     final emailCtrl = TextEditingController();
     final nameCtrl = TextEditingController();
@@ -295,10 +331,21 @@ class _MobileLayoutState extends State<MobileLayout> {
                                     children: [
                                       Text(e.uuid.substring(0, 8), style: const TextStyle(fontSize: 10, color: Colors.grey)),
                                       const SizedBox(height: 6),
-                                      ElevatedButton(
-                                        onPressed: () => _showChangeRoleDialog(e),
-                                        child: const Text('Change role'),
-                                        style: ElevatedButton.styleFrom(backgroundColor: Colors.blueGrey, padding: const EdgeInsets.symmetric(horizontal: 8, vertical: 6), textStyle: const TextStyle(fontSize: 12)),
+                                      Row(
+                                        mainAxisSize: MainAxisSize.min,
+                                        children: [
+                                          ElevatedButton(
+                                            onPressed: () => _showChangeRoleDialog(e),
+                                            child: const Text('Change role'),
+                                            style: ElevatedButton.styleFrom(backgroundColor: Colors.blueGrey, padding: const EdgeInsets.symmetric(horizontal: 8, vertical: 6), textStyle: const TextStyle(fontSize: 12)),
+                                          ),
+                                          const SizedBox(width: 6),
+                                          IconButton(
+                                            onPressed: () => _confirmDeleteUser(e),
+                                            icon: const Icon(Icons.delete_forever, color: Colors.red),
+                                            tooltip: 'Delete user',
+                                          ),
+                                        ],
                                       ),
                                     ],
                                   ),
@@ -397,6 +444,40 @@ class _DesktopLayoutState extends State<DesktopLayout> {
         ],
       ),
     );
+  }
+
+  Future<void> _confirmDeleteUserDesktop(Employee e) async {
+    final confirm = await showDialog<bool>(
+      context: context,
+      builder: (ctx) => AlertDialog(
+        title: Text('Delete ${e.name}?'),
+        content: const Text('This will permanently delete the user. Are you sure?'),
+        actions: [
+          TextButton(onPressed: () => Navigator.pop(ctx, false), child: const Text('Cancel')),
+          ElevatedButton(
+            style: ElevatedButton.styleFrom(backgroundColor: Colors.red),
+            onPressed: () => Navigator.pop(ctx, true),
+            child: const Text('Delete'),
+          ),
+        ],
+      ),
+    );
+
+    if (confirm != true) return;
+
+    try {
+      final resp = await supabase.functions.invoke('delete-user', body: {'user_id': e.uuid});
+      if (resp.data == null || resp.data['error'] != null) {
+        final err = resp.data?['error'] ?? 'Unknown error';
+        throw err;
+      }
+
+      if (context.mounted) ScaffoldMessenger.of(context).showSnackBar(SnackBar(content: Text('Deleted ${e.name}')));
+      _refresh();
+    } catch (err) {
+      debugPrint('Delete user failed (desktop): $err');
+      if (context.mounted) ScaffoldMessenger.of(context).showSnackBar(SnackBar(content: Text('Failed: $err')));
+    }
   }
 
   void _showInviteDialog() {
@@ -560,7 +641,7 @@ class _DesktopLayoutState extends State<DesktopLayout> {
                                                 final e = _employees[i];
                                                 return Card(
                                                   child: ListTile(
-                                                    contentPadding: const EdgeInsets.symmetric(horizontal: 20, vertical: 8),
+                                                    contentPadding: const EdgeInsets.symmetric(horizontal: 20, vertical: 10),
                                                     leading: CircleAvatar(
                                                       radius: 28,
                                                       child: Text(
@@ -584,15 +665,26 @@ class _DesktopLayoutState extends State<DesktopLayout> {
                                                           e.uuid.substring(0, 8),
                                                           style: const TextStyle(fontSize: 11, color: Colors.grey),
                                                         ),
-                                                        ElevatedButton(
-                                                          onPressed: () => _showChangeRoleDialogDesktop(e),
-                                                          child: const Text('Change role'),
-                                                          style: ElevatedButton.styleFrom(
-                                                            backgroundColor: Colors.blueGrey,
-                                                            padding: const EdgeInsets.symmetric(horizontal: 16, vertical: 8),
-                                                            textStyle: const TextStyle(fontSize: 12),
-                                                          ),
-                                                        ),
+                                                                  Row(
+                                                                    mainAxisSize: MainAxisSize.min,
+                                                                    children: [
+                                                                      ElevatedButton(
+                                                                        onPressed: () => _showChangeRoleDialogDesktop(e),
+                                                                        child: const Text('Change role'),
+                                                                        style: ElevatedButton.styleFrom(
+                                                                          backgroundColor: Colors.blueGrey,
+                                                                          padding: const EdgeInsets.symmetric(horizontal: 16, vertical: 10),
+                                                                          textStyle: const TextStyle(fontSize: 12),
+                                                                        ),
+                                                                      ),
+                                                                      const SizedBox(width: 8),
+                                                                      IconButton(
+                                                                        onPressed: () async => await _confirmDeleteUserDesktop(e),
+                                                                        icon: const Icon(Icons.delete_forever, color: Colors.red),
+                                                                        tooltip: 'Delete user',
+                                                                      ),
+                                                                    ],
+                                                                  ),
                                                       ],
                                                     ),
                                                   ),
