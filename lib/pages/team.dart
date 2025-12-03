@@ -259,7 +259,15 @@ class _DesktopLayoutState extends State<DesktopLayout> {
               : '${team.users.length} teamleden',
           style: const TextStyle(fontSize: 18, fontWeight: FontWeight.bold),
         ),
-        subtitle: Text(isManager ? 'Jij bent de manager' : 'Manager: ${team.manager.substring(0, 8)}...'),
+        subtitle: Column(
+          crossAxisAlignment: CrossAxisAlignment.start,
+          mainAxisSize: MainAxisSize.min,
+          children: [
+            Text(isManager ? 'Jij bent de manager' : 'Manager: ${team.manager.substring(0, 8)}...'),
+            const SizedBox(height: 4),
+            Text('Team ID: ${team.id.substring(0, team.id.length > 100 ? 100 : team.id.length)}'),
+          ],
+        ),
         children: [
           FutureBuilder<List<Map<String, dynamic>>>(
             future: _fetchTeamMembers(team.users),
@@ -282,7 +290,10 @@ class _DesktopLayoutState extends State<DesktopLayout> {
                       m['name']?.toString() ?? 'Onbekend',
                       style: TextStyle(fontWeight: isCurrentUser ? FontWeight.bold : FontWeight.normal),
                     ),
-                    subtitle: Text(m['email']?.toString() ?? 'Geen e-mail'),
+                    subtitle: Text(
+                      '${m['email']?.toString() ?? 'Geen e-mail'}\n'
+                      '${m['users']?['role'] == 'manager' ? 'Manager' : 'Werknemer'}'
+                    ),
                     trailing: isCurrentUser ? const Text('JIJ', style: TextStyle(color: Colors.orange, fontWeight: FontWeight.bold)) : null,
                   );
                 }).toList(),
