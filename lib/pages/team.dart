@@ -281,6 +281,7 @@ class _DesktopLayoutState extends State<DesktopLayout> {
               return Column(
                 children: members.map((m) {
                   final isCurrentUser = m['id'] == supabase.auth.currentUser?.id;
+                  final bool isManager = team.manager == m['id'];
                   return ListTile(
                     leading: CircleAvatar(
                       backgroundColor: isCurrentUser ? Colors.orange : Colors.grey,
@@ -292,7 +293,7 @@ class _DesktopLayoutState extends State<DesktopLayout> {
                     ),
                     subtitle: Text(
                       '${m['email']?.toString() ?? 'Geen e-mail'}\n'
-                      '${m['users']?['role'] == 'manager' ? 'Manager' : 'Werknemer'}'
+                      '${isManager ? 'Manager' : 'Werknemer'}'
                     ),
                     trailing: isCurrentUser ? const Text('JIJ', style: TextStyle(color: Colors.orange, fontWeight: FontWeight.bold)) : null,
                   );
