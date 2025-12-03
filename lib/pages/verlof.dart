@@ -53,6 +53,7 @@ class _MobileLayoutState extends State<MobileLayout> {
   Set<int> _selectedRequestIds = <int>{};
   bool _isBulkMode = false;
   bool _isSubmittingQuickSick = false;
+  bool _isOfficeManager = false;
 
   @override
   void initState() {
@@ -67,28 +68,45 @@ class _MobileLayoutState extends State<MobileLayout> {
       setState(() => _error = 'Not logged in.');
       return;
     }
+
     try {
       final jwt = session.accessToken;
       final payload = Jwt.parseJwt(jwt);
       final roleFromJwt = payload['app_metadata']?['user_role'] as String? ??
           payload['user_role'] as String?;
+
       if (roleFromJwt != null) {
         final isManager = roleFromJwt == 'manager';
-        setState(() => _isManager = isManager);
+        final isOfficeManager = roleFromJwt == 'office_manager'; // NEW
+
+        setState(() {
+          _isManager = isManager;
+          _isOfficeManager = isOfficeManager;
+        });
+
         await _fetchRequests();
         return;
       }
+
       print('JWT has no user_role. Falling back to permissions table...');
       final userId = supabase.auth.currentUser?.id;
       if (userId == null) throw 'No user ID';
+
       final response = await supabase
           .from('permissions')
           .select('role')
           .eq('user_uuid', userId)
           .maybeSingle();
+
       final roleFromDb = response?['role'] as String?;
       final isManager = roleFromDb == 'manager';
-      setState(() => _isManager = isManager);
+      final isOfficeManager = roleFromDb == 'office_manager'; // NEW
+
+      setState(() {
+        _isManager = isManager;
+        _isOfficeManager = isOfficeManager;
+      });
+
       await _fetchRequests();
     } catch (e, st) {
       print('ERROR in _checkManagerAndFetch: $e');
@@ -147,7 +165,7 @@ class _MobileLayoutState extends State<MobileLayout> {
     try {
       print('Fetching requests for user: $userId | isManager: $_isManager');
       late final PostgrestList response;
-      if (_isManager) {
+      if (_isOfficeManager || _isManager) {
         response = await supabase
             .from('verlof')
             .select('*')
@@ -847,7 +865,7 @@ class _MobileLayoutState extends State<MobileLayout> {
                                                   final state = req['verlof_state'] as String?;
                                                   final isOwn = req['user_id'] == supabase.auth.currentUser?.id;
                                                   final isSelected = _selectedRequestIds.contains(id);
-                                                  final canSelect = _isManager && !isOwn && state != 'approved';
+                                                  final canSelect = (_isOfficeManager || _isManager) && !isOwn && state != 'approved';
 
                                                   return Card(
                                                     color: isSelected ? Colors.blue.shade50 : null,
@@ -878,14 +896,27 @@ class _MobileLayoutState extends State<MobileLayout> {
                                                       trailing: Row(
                                                         mainAxisSize: MainAxisSize.min,
                                                         children: [
-                                                          if (_isManager && !isOwn && !_isBulkMode) ...[
-                                                            if (state != 'approved')
-                                                              IconButton(icon: const Icon(Icons.check, color: Colors.green), onPressed: () => _updateRequestStatus(id, 'approve'), tooltip: 'Approve'),
-                                                            if (state != 'denied')
-                                                              IconButton(icon: const Icon(Icons.close, color: Colors.red), onPressed: () => _updateRequestStatus(id, 'deny'), tooltip: 'Deny'),
-                                                          ],
-                                                          if (isOwn || _isManager)
-                                                            IconButton(icon: const Icon(Icons.delete, color: Colors.red), onPressed: () => _deleteRequest(id), tooltip: 'Delete'),
+                                                        if ((_isOfficeManager || _isManager) && !isOwn && !_isBulkMode) ...[
+                                                              if (state != 'approved')
+                                                                IconButton(
+                                                                  icon: const Icon(Icons.check, color: Colors.green),
+                                                                  onPressed: () => _updateRequestStatus(id, 'approve'),
+                                                                  tooltip: 'Approve',
+                                                                ),
+                                                              if (state != 'denied')
+                                                                IconButton(
+                                                                  icon: const Icon(Icons.close, color: Colors.red),
+                                                                  onPressed: () => _updateRequestStatus(id, 'deny'),
+                                                                  tooltip: 'Deny',
+                                                                ),
+                                                            ],
+                                                            // Delete button – own requests OR any manager/office_manager can delete
+                                                            if (isOwn || _isOfficeManager || _isManager)
+                                                              IconButton(
+                                                                icon: const Icon(Icons.delete, color: Colors.red),
+                                                                onPressed: () => _deleteRequest(id),
+                                                                tooltip: 'Delete',
+                                                            ),
                                                         ],
                                                       ),
                                                     ),
@@ -963,6 +994,7 @@ class _DesktopLayoutState extends State<DesktopLayout> {
   Set<int> _selectedRequestIds = <int>{};
   bool _isBulkMode = false;
   bool _isSubmittingQuickSick = false;
+  bool _isOfficeManager = false;
 
   @override
   void initState() {
@@ -977,28 +1009,45 @@ class _DesktopLayoutState extends State<DesktopLayout> {
       setState(() => _error = 'Not logged in.');
       return;
     }
+
     try {
       final jwt = session.accessToken;
       final payload = Jwt.parseJwt(jwt);
       final roleFromJwt = payload['app_metadata']?['user_role'] as String? ??
           payload['user_role'] as String?;
+
       if (roleFromJwt != null) {
         final isManager = roleFromJwt == 'manager';
-        setState(() => _isManager = isManager);
+        final isOfficeManager = roleFromJwt == 'office_manager'; // NEW
+
+        setState(() {
+          _isManager = isManager;
+          _isOfficeManager = isOfficeManager;
+        });
+
         await _fetchRequests();
         return;
       }
+
       print('JWT has no user_role. Falling back to permissions table...');
       final userId = supabase.auth.currentUser?.id;
       if (userId == null) throw 'No user ID';
+
       final response = await supabase
           .from('permissions')
           .select('role')
           .eq('user_uuid', userId)
           .maybeSingle();
+
       final roleFromDb = response?['role'] as String?;
       final isManager = roleFromDb == 'manager';
-      setState(() => _isManager = isManager);
+      final isOfficeManager = roleFromDb == 'office_manager'; // NEW
+
+      setState(() {
+        _isManager = isManager;
+        _isOfficeManager = isOfficeManager;
+      });
+
       await _fetchRequests();
     } catch (e, st) {
       print('ERROR in _checkManagerAndFetch: $e');
@@ -1057,7 +1106,7 @@ class _DesktopLayoutState extends State<DesktopLayout> {
     try {
       print('Fetching requests for user: $userId | isManager: $_isManager');
       late final PostgrestList response;
-      if (_isManager) {
+      if (_isOfficeManager || _isManager) {
         response = await supabase
             .from('verlof')
             .select('*')
@@ -1881,7 +1930,7 @@ class _DesktopLayoutState extends State<DesktopLayout> {
                                           final state = req['verlof_state'] as String?;
                                           final isOwn = req['user_id'] == supabase.auth.currentUser?.id;
                                           final isSelected = _selectedRequestIds.contains(id);
-                                          final canSelect = _isManager && !isOwn && state != 'approved';
+                                          final canSelect = (_isOfficeManager || _isManager) && !isOwn && state != 'approved';
 
                                           return Card(
                                             color: isSelected ? Colors.blue.shade50 : null,
@@ -1912,14 +1961,27 @@ class _DesktopLayoutState extends State<DesktopLayout> {
                                               trailing: Row(
                                                 mainAxisSize: MainAxisSize.min,
                                                 children: [
-                                                  if (_isManager && !isOwn && !_isBulkMode) ...[
-                                                    if (state != 'approved')
-                                                      IconButton(icon: const Icon(Icons.check, color: Colors.green), onPressed: () => _updateRequestStatus(id, 'approve'), tooltip: 'Approve'),
-                                                    if (state != 'denied')
-                                                      IconButton(icon: const Icon(Icons.close, color: Colors.red), onPressed: () => _updateRequestStatus(id, 'deny'), tooltip: 'Deny'),
-                                                  ],
-                                                  if (isOwn || _isManager)
-                                                    IconButton(icon: const Icon(Icons.delete, color: Colors.red), onPressed: () => _deleteRequest(id), tooltip: 'Delete'),
+                                                if ((_isOfficeManager || _isManager) && !isOwn && !_isBulkMode) ...[
+                                                      if (state != 'approved')
+                                                        IconButton(
+                                                          icon: const Icon(Icons.check, color: Colors.green),
+                                                          onPressed: () => _updateRequestStatus(id, 'approve'),
+                                                          tooltip: 'Approve',
+                                                        ),
+                                                      if (state != 'denied')
+                                                        IconButton(
+                                                          icon: const Icon(Icons.close, color: Colors.red),
+                                                          onPressed: () => _updateRequestStatus(id, 'deny'),
+                                                          tooltip: 'Deny',
+                                                        ),
+                                                    ],
+                                                    // Delete button – own requests OR any manager/office_manager can delete
+                                                    if (isOwn || _isOfficeManager || _isManager)
+                                                      IconButton(
+                                                        icon: const Icon(Icons.delete, color: Colors.red),
+                                                        onPressed: () => _deleteRequest(id),
+                                                        tooltip: 'Delete',
+                                                    ),
                                                 ],
                                               ),
                                             ),
