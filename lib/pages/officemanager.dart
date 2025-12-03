@@ -138,7 +138,7 @@ class _MobileLayoutState extends State<MobileLayout> {
   // _showChangeRoleDialogDesktop has been moved to the Desktop state class
 
   Future<void> _showChangeRoleDialog(Employee e) async {
-    final roles = ['worker', 'manager', 'office_manager', 'admin'];
+    final roles = ['worker', 'manager'];
     String selected = e.role;
 
     await showDialog<void>(
@@ -353,7 +353,7 @@ class _DesktopLayoutState extends State<DesktopLayout> {
   }
 
   Future<void> _showChangeRoleDialogDesktop(Employee e) async {
-    final roles = ['worker', 'manager', 'office_manager', 'admin'];
+    final roles = ['worker', 'manager'];
     String selected = e.role;
 
     await showDialog<void>(
@@ -443,7 +443,7 @@ class _DesktopLayoutState extends State<DesktopLayout> {
               try {
                 final response = await supabase.functions.invoke(
                   'quick-api',
-                  body: {'email': email, 'name': name, 'password': 'temp123456', 'role': 'worker'},
+                  body: {'email': email, 'name': name, 'role': 'worker'},
                   headers: {
                     'Content-Type': 'application/json',
                   },
