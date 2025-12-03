@@ -70,36 +70,24 @@ class Employee {
   });
 }
 
-Future<List<Employee>> loadEmployees() async {
-  try {
-    final response = await supabase.functions.invoke('super-processor');
-    final data = response.data as Map<String, dynamic>?;
-
-    if (data == null || data['users'] == null) {
-      debugPrint('loadEmployees: no users returned');
-      return [];
-    }
-
-    final List<dynamic> rawUsers = data['users'];
-
-    debugPrint('loadEmployees: fetched ${rawUsers.length} users');
-
-    final employees = rawUsers.map((u) {
-      final map = Map<String, dynamic>.from(u);
-
-      return Employee(
-        uuid: map['id']?.toString() ?? '',
-        name: map['user_metadata']?['display_name']?.toString() ?? '',
-        role: map['role']?.toString() ?? '',
-      );
-    }).toList();
-
-    return employees;
-  } catch (e, st) {
-    debugPrint('loadEmployees ERROR: $e\n$st');
-    return [];
+Future<List<Employee>> loadEmployees() async { 
+  try { 
+    final response = await supabase.functions.invoke('super-processor'); 
+    final data = response.data as Map<String, dynamic>?; 
+    if (data == null || data['users'] == null) { 
+      debugPrint('loadEmployees: no users returned'); return []; 
+    } final List<dynamic> rawUsers = data['users']; 
+    debugPrint('loadEmployees: fetched ${rawUsers.length} users'); 
+    final employees = rawUsers.map((u) { 
+      final map = Map<String, dynamic>.from(u); 
+      return Employee( uuid: map['id']?.toString() ?? '', name: map['user_metadata']?['display_name']?.toString() ?? '', role: map['role']?.toString() ?? '', ); 
+    }).toList(); return employees; 
+  } catch (e, st) { 
+    debugPrint('loadEmployees ERROR: $e\n$st'); return []; 
   }
 }
+
+
 
 
 Future<void> changeUserRole(String userUuid, String newRole) async {
