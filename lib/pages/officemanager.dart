@@ -468,7 +468,7 @@ class _DesktopLayoutState extends State<DesktopLayout> {
     if (confirm != true) return;
 
     try {
-      final resp = await supabase.functions.invoke('delete-user', body: {'user_id': e.uuid});
+      final resp = await supabase.functions.invoke('dynamic-worker', body: {'user_id': e.uuid});
       if (resp.data == null || resp.data['error'] != null) {
         final err = resp.data?['error'] ?? 'Unknown error';
         throw err;
@@ -667,30 +667,30 @@ class _DesktopLayoutState extends State<DesktopLayout> {
                                                           e.uuid.substring(0, 8),
                                                           style: const TextStyle(fontSize: 11, color: Colors.grey),
                                                         ),
-                                                          const SizedBox(height: 0),
-                                                                  Row(
-                                                                    mainAxisSize: MainAxisSize.min,
-                                                                    children: [
-                                                                      ElevatedButton(
-                                                                        onPressed: () => _showChangeRoleDialogDesktop(e),
-                                                                        child: const Text('Change role'),
-                                                                        style: ElevatedButton.styleFrom(
-                                                                          backgroundColor: Colors.blueGrey,
-                                                                          padding: const EdgeInsets.symmetric(horizontal: 16, vertical: 8),
-                                                                          textStyle: const TextStyle(fontSize: 12),
-                                                                                                                                                  
-                                                                        ),
-                                                                      ),
-                                                                      SizedBox(width: 8),
-                                                                      IconButton(
-                                                                        onPressed: () async => await _confirmDeleteUserDesktop(e),
-                                                                        icon: const Icon(Icons.delete_forever, color: Colors.red),
-                                                                        tooltip: 'Delete user',
-                                                                        constraints: const BoxConstraints(minHeight: 32, minWidth: 32),
-                                                                        padding: EdgeInsets.zero,
-                                                                      ),
-                                                                    ],
-                                                                  ),
+                                                        const SizedBox(height: 0),
+                                                        Row(
+                                                          mainAxisSize: MainAxisSize.min,
+                                                          children: [
+                                                            ElevatedButton(
+                                                              onPressed: () => _showChangeRoleDialogDesktop(e),
+                                                              child: const Text('Change role'),
+                                                              style: ElevatedButton.styleFrom(
+                                                                backgroundColor: Colors.blueGrey,
+                                                                padding: const EdgeInsets.symmetric(horizontal: 16, vertical: 8),
+                                                                textStyle: const TextStyle(fontSize: 12),
+                                                                                                                                        
+                                                              ),
+                                                            ),
+                                                            SizedBox(width: 8),
+                                                            IconButton(
+                                                              onPressed: () async => await _confirmDeleteUserDesktop(e),
+                                                              icon: const Icon(Icons.delete_forever, color: Colors.red),
+                                                              tooltip: 'Delete user',
+                                                              constraints: const BoxConstraints(minHeight: 32, minWidth: 32),
+                                                              padding: EdgeInsets.zero,
+                                                            ),
+                                                          ],
+                                                        ),
                                                       ],
                                                     ),
                                                   ),
