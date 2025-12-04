@@ -337,13 +337,15 @@ class _MobileLayoutState extends State<MobileLayout> {
                                           ElevatedButton(
                                             onPressed: () => _showChangeRoleDialog(e),
                                             child: const Text('Change role'),
-                                            style: ElevatedButton.styleFrom(backgroundColor: Colors.blueGrey, padding: const EdgeInsets.symmetric(horizontal: 8, vertical: 6), textStyle: const TextStyle(fontSize: 12)),
+                                            style: ElevatedButton.styleFrom(backgroundColor: Colors.blueGrey, padding: const EdgeInsets.symmetric(horizontal: 8, vertical: 4), textStyle: const TextStyle(fontSize: 12)),
                                           ),
                                           const SizedBox(width: 6),
                                           IconButton(
                                             onPressed: () => _confirmDeleteUser(e),
                                             icon: const Icon(Icons.delete_forever, color: Colors.red),
                                             tooltip: 'Delete user',
+                                            constraints: const BoxConstraints(minHeight: 32, minWidth: 32),
+                                            padding: EdgeInsets.zero,
                                           ),
                                         ],
                                       ),
@@ -641,7 +643,7 @@ class _DesktopLayoutState extends State<DesktopLayout> {
                                                 final e = _employees[i];
                                                 return Card(
                                                   child: ListTile(
-                                                    contentPadding: const EdgeInsets.symmetric(horizontal: 20, vertical: 10),
+                                                    contentPadding: const EdgeInsets.symmetric(horizontal: 20, vertical: 8),
                                                     leading: CircleAvatar(
                                                       radius: 28,
                                                       child: Text(
@@ -665,6 +667,7 @@ class _DesktopLayoutState extends State<DesktopLayout> {
                                                           e.uuid.substring(0, 8),
                                                           style: const TextStyle(fontSize: 11, color: Colors.grey),
                                                         ),
+                                                          const SizedBox(height: 0),
                                                                   Row(
                                                                     mainAxisSize: MainAxisSize.min,
                                                                     children: [
@@ -673,15 +676,18 @@ class _DesktopLayoutState extends State<DesktopLayout> {
                                                                         child: const Text('Change role'),
                                                                         style: ElevatedButton.styleFrom(
                                                                           backgroundColor: Colors.blueGrey,
-                                                                          padding: const EdgeInsets.symmetric(horizontal: 16, vertical: 10),
+                                                                          padding: const EdgeInsets.symmetric(horizontal: 16, vertical: 8),
                                                                           textStyle: const TextStyle(fontSize: 12),
+                                                                                                                                                  
                                                                         ),
                                                                       ),
-                                                                      const SizedBox(width: 8),
+                                                                      SizedBox(width: 8),
                                                                       IconButton(
                                                                         onPressed: () async => await _confirmDeleteUserDesktop(e),
                                                                         icon: const Icon(Icons.delete_forever, color: Colors.red),
                                                                         tooltip: 'Delete user',
+                                                                        constraints: const BoxConstraints(minHeight: 32, minWidth: 32),
+                                                                        padding: EdgeInsets.zero,
                                                                       ),
                                                                     ],
                                                                   ),
