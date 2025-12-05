@@ -485,72 +485,87 @@ class _DesktopLayoutState extends State<DesktopLayout> {
   void _showInviteDialog() {
     final emailCtrl = TextEditingController();
     final nameCtrl = TextEditingController();
+    final List<String> roles = ['worker', 'manager'];
+    String? selectedRole = roles.first;
 
     showDialog(
       context: context,
-      builder: (ctx) => AlertDialog(
-        title: const Text('Add New Employee'),
-        content: SizedBox(
-          width: 400,
-          child: Column(
-            mainAxisSize: MainAxisSize.min,
-            children: [
-              TextField(
-                controller: emailCtrl,
-                decoration: const InputDecoration(labelText: 'Email *'),
-                keyboardType: TextInputType.emailAddress,
-              ),
-              const SizedBox(height: 12),
-              TextField(
-                controller: nameCtrl,
-                decoration: const InputDecoration(labelText: 'Name *'),
-              ),
-            ],
+      builder: (ctx) => StatefulBuilder(
+        builder: (context, setStateDialog) => AlertDialog(
+          title: const Text('Add New Employee'),
+          content: SizedBox(
+            width: 400,
+            child: Column(
+              mainAxisSize: MainAxisSize.min,
+              children: [
+                TextField(
+                  controller: emailCtrl,
+                  decoration: const InputDecoration(labelText: 'Email *'),
+                  keyboardType: TextInputType.emailAddress,
+                ),
+                const SizedBox(height: 12),
+                TextField(
+                  controller: nameCtrl,
+                  decoration: const InputDecoration(labelText: 'Name *'),
+                ),
+                const SizedBox(height: 12),
+                DropdownButtonFormField<String>(
+                value: selectedRole,
+                hint: const Text('Select role'),
+                items: roles
+                    .map((r) => DropdownMenuItem<String>(value: r, child: Text(r[0].toUpperCase() + r.substring(1)),))
+                    .toList(),
+                onChanged: (value) => setStateDialog(() {selectedRole = value;}),
+                decoration: const InputDecoration(labelText: 'Role', border: OutlineInputBorder(),),
+                validator: (v) => v == null ? 'Please select a role' : null,
+                ),
+              ],
+            ),
           ),
-        ),
-        actions: [
-          TextButton(onPressed: () => Navigator.pop(ctx), child: const Text('Cancel')),
-          ElevatedButton(
-            style: ElevatedButton.styleFrom(backgroundColor: Colors.green),
-            onPressed: () async {
-              final email = emailCtrl.text.trim();
-              final name = nameCtrl.text.trim();
+          actions: [
+            TextButton(onPressed: () => Navigator.pop(ctx), child: const Text('Cancel')),
+            ElevatedButton(
+              style: ElevatedButton.styleFrom(backgroundColor: Colors.green),
+              onPressed: () async {
+                final email = emailCtrl.text.trim();
+                final name = nameCtrl.text.trim();
 
-              if (email.isEmpty || name.isEmpty || !email.contains('@')) {
-                ScaffoldMessenger.of(context).showSnackBar(
-                  const SnackBar(content: Text('Please enter a valid email and name')),
-                );
-                return;
-              }
-
-              try {
-                final response = await supabase.functions.invoke(
-                  'quick-api',
-                  body: {'email': email, 'name': name, 'role': 'worker'},
-                  headers: {
-                    'Content-Type': 'application/json',
-                  },
-                );
-
-                if (response.data == null || response.data['error'] != null) {
-                  throw response.data?['error'] ?? 'Unknown error';
+                if (email.isEmpty || name.isEmpty || !email.contains('@')) {
+                  ScaffoldMessenger.of(context).showSnackBar(
+                    const SnackBar(content: Text('Please fill all fields with valid data')),
+                  );
+                  return;
                 }
 
-                if (ctx.mounted) Navigator.pop(ctx);
-                ScaffoldMessenger.of(context).showSnackBar(
-                  SnackBar(content: Text('Employee added: $name')),
-                );
-                _refresh();
-              } catch (e) {
-                debugPrint('Add employee failed: $e');
-                ScaffoldMessenger.of(context).showSnackBar(
-                  SnackBar(content: Text('Failed: $e')),
-                );
-              }
-            },
-            child: const Text('Add'),
-          ),
-        ],
+                try {
+                  final response = await supabase.functions.invoke(
+                    'quick-api',
+                    body: {'email': email, 'name': name, 'role': selectedRole},
+                    headers: {
+                      'Content-Type': 'application/json',
+                    },
+                  );
+
+                  if (response.data == null || response.data['error'] != null) {
+                    throw response.data?['error'] ?? 'Unknown error';
+                  }
+
+                  if (ctx.mounted) Navigator.pop(ctx);
+                  ScaffoldMessenger.of(context).showSnackBar(
+                    SnackBar(content: Text('Employee added: $name')),
+                  );
+                  _refresh();
+                } catch (e) {
+                  debugPrint('Add employee failed: $e');
+                  ScaffoldMessenger.of(context).showSnackBar(
+                    SnackBar(content: Text('Failed: $e')),
+                  );
+                }
+              },
+              child: const Text('Add'),
+            ),
+          ],
+        ),
       ),
     );
   }
