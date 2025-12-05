@@ -62,11 +62,13 @@ class Employee {
   final String uuid;
   final String name;
   final String role;
+  final String email;
 
   Employee({
     required this.uuid,
     required this.name,
     required this.role,
+    required this.email,
   });
 }
 
@@ -80,7 +82,7 @@ Future<List<Employee>> loadEmployees() async {
     debugPrint('loadEmployees: fetched ${rawUsers.length} users'); 
     final employees = rawUsers.map((u) { 
       final map = Map<String, dynamic>.from(u); 
-      return Employee( uuid: map['id']?.toString() ?? '', name: map['user_metadata']?['display_name']?.toString() ?? '', role: map['role']?.toString() ?? '', ); 
+      return Employee( uuid: map['id']?.toString() ?? '', name: map['user_metadata']?['display_name']?.toString() ?? '', role: map['role']?.toString() ?? '', email: map['email']?.toString() ?? '',); 
     }).toList(); return employees; 
   } catch (e, st) { 
     debugPrint('loadEmployees ERROR: $e\n$st'); return []; 
@@ -662,17 +664,26 @@ class _DesktopLayoutState extends State<DesktopLayout> {
                                                     leading: CircleAvatar(
                                                       radius: 28,
                                                       child: Text(
-                                                        e.name.isNotEmpty ? e.name[0].toUpperCase() : '?',
+                                                        e.name.isNotEmpty ? e.name[0].toUpperCase() : e.email[0],
                                                         style: const TextStyle(fontSize: 22, fontWeight: FontWeight.bold),
                                                       ),
                                                     ),
                                                     title: Text(
-                                                      e.name,
+                                                      e.name.isNotEmpty ? e.name: 'Unnamed',
                                                       style: const TextStyle(fontSize: 20, fontWeight: FontWeight.w600),
                                                     ),
-                                                    subtitle: Text(
-                                                      e.role,
-                                                      style: const TextStyle(fontSize: 16),
+                                                    subtitle: Column(
+                                                      crossAxisAlignment: CrossAxisAlignment.start,
+                                                      children: [
+                                                        Text(
+                                                          e.email,
+                                                          style: const TextStyle(fontSize: 16),
+                                                        ),
+                                                        Text(
+                                                          e.role,
+                                                          style: const TextStyle(fontSize: 16),
+                                                        ),
+                                                      ],
                                                     ),
                                                     trailing: Column(
                                                       mainAxisSize: MainAxisSize.min,
