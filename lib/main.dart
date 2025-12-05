@@ -5,7 +5,6 @@ import 'package:geoprof/pages/dashboard.dart';
 import 'package:geoprof/pages/admin.dart';
 import 'package:geoprof/pages/home.dart';
 import 'package:geoprof/pages/login.dart';
-import 'package:geoprof/pages/register.dart';
 import 'package:geoprof/pages/profile.dart';
 import 'package:geoprof/pages/verlof.dart';
 
@@ -39,7 +38,6 @@ class MyApp extends StatelessWidget {
         '/login': (context) => const LoginPage(),
         '/dashboard': (context) => const Dashboard(),
         '/admin': (context) => const AdminPage(),
-        '/register': (context) => const RegisterPage(),
         '/profile': (context) => const ProfilePage(),
         '/verlof': (context) => const VerlofPage(),
         '/officemanager':(context) => const OfficeManagerDashboard(),
