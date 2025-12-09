@@ -1,5 +1,3 @@
-// lib/pages/office_manager_dashboard.dart
-
 import 'package:flutter/foundation.dart';
 import 'package:flutter/material.dart';
 import 'package:supabase_flutter/supabase_flutter.dart';
@@ -89,20 +87,31 @@ Future<List<Employee>> loadEmployees() async {
   }
 }
 
-
-
+Future<bool> createUser(String email, String name, String role) async {
+  try {
+    final response = await supabase.functions.invoke('quick-api', body: {'email': email,'name': name,'role': role});
+    return true;
+  } catch (err) {
+    debugPrint('Create user failed: $err');
+    return false;
+  }
+}
 
 Future<void> changeUserRole(String userUuid, String newRole) async {
-  final response = await supabase.functions.invoke(
-    'super-api',  
-    body: {
-      'user_id': userUuid,
-      'role': newRole,
-    },
-  );
+  final response = await supabase.functions.invoke('super-api', body: {'user_id': userUuid,'role': newRole});
 
   if (response.data['error'] != null) {
     throw response.data['error']!;
+  }
+}
+
+Future<bool> deleteUser(String userUuid ) async {
+  try {
+    await supabase.functions.invoke('dynamic-worker', body: {'user_id': userUuid});
+    return true;
+  } catch (err) {
+    debugPrint('Delete user failed (desktop): $err');
+    return false;
   }
 }
 
@@ -485,8 +494,8 @@ class _DesktopLayoutState extends State<DesktopLayout> {
   }
 
   void _showInviteDialog() {
-    final emailCtrl = TextEditingController();
     final nameCtrl = TextEditingController();
+    final emailCtrl = TextEditingController();
     final List<String> roles = ['worker', 'manager'];
     String? selectedRole = roles.first;
 
@@ -531,36 +540,22 @@ class _DesktopLayoutState extends State<DesktopLayout> {
               onPressed: () async {
                 final email = emailCtrl.text.trim();
                 final name = nameCtrl.text.trim();
-
                 if (email.isEmpty || name.isEmpty || !email.contains('@')) {
                   ScaffoldMessenger.of(context).showSnackBar(
                     const SnackBar(content: Text('Please fill all fields with valid data')),
                   );
                   return;
                 }
-
-                try {
-                  final response = await supabase.functions.invoke(
-                    'quick-api',
-                    body: {'email': email, 'name': name, 'role': selectedRole},
-                    headers: {
-                      'Content-Type': 'application/json',
-                    },
-                  );
-
-                  if (response.data == null || response.data['error'] != null) {
-                    throw response.data?['error'] ?? 'Unknown error';
-                  }
-
-                  if (ctx.mounted) Navigator.pop(ctx);
+                
+                var response = await createUser(email, name, selectedRole ?? 'worker');
+                if (response) {
                   ScaffoldMessenger.of(context).showSnackBar(
                     SnackBar(content: Text('Employee added: $name')),
                   );
                   _refresh();
-                } catch (e) {
-                  debugPrint('Add employee failed: $e');
+                } else {
                   ScaffoldMessenger.of(context).showSnackBar(
-                    SnackBar(content: Text('Failed: $e')),
+                    SnackBar(content: Text('Error creating user')),
                   );
                 }
               },
