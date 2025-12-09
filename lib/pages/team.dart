@@ -263,7 +263,6 @@ class _DesktopLayoutState extends State<DesktopLayout> {
           crossAxisAlignment: CrossAxisAlignment.start,
           mainAxisSize: MainAxisSize.min,
           children: [
-            Text(isManager ? 'Jij bent de manager' : 'Manager: ${team.manager.substring(0, 8)}...'),
             const SizedBox(height: 4),
             Text('Team ID: ${team.id.substring(0, team.id.length > 100 ? 100 : team.id.length)}'),
           ],
