@@ -129,56 +129,71 @@ class _MobileLayoutState extends State<MobileLayout> {
   }
 
   Future<void> _fetchLeaveBalance() async {
+    final userId = supabase.auth.currentUser?.id;
+    if (userId == null) {
+      setState(() => _remainingLeaveDays = 0);
+      return;
+    }
+
     try {
       final response = await supabase
-          .from('my_leave_balance')
-          .select('remaining_days')
-          .single();
+          .from('leave_balance')
+          .select('total_days, used_days')
+          .eq('user_id', userId)
+          .eq('year', DateTime.now().year)  // current year
+          .maybeSingle();
 
-      setState(() {
-        _remainingLeaveDays = response['remaining_days'] as int;
-        _error = null;
-      });
+      if (response == null) {
+        setState(() => _remainingLeaveDays = 0);
+        return;
+      }
+
+      final total = (response['total_days'] as num?)?.toInt() ?? 28;
+      final used = (response['used_days'] as num?)?.toInt() ?? 0;
+
+      setState(() => _remainingLeaveDays = total - used);
     } catch (e) {
-      print('Balance fetch error: $e');
-      setState(() => _error = 'Failed to load leave balance');
+      print('Balance error: $e');
+      setState(() => _remainingLeaveDays = 0);
     }
   }
   
   Future<void> _fetchRequests() async {
     setState(() => _isLoadingRequests = true);
-    if (!await _validateSession()) {
-      setState(() {
-        _isLoadingRequests = false;
-        _error = 'Session expired. Please log in again.';
-      });
-      return;
-    }
+
     final userId = supabase.auth.currentUser?.id;
     if (userId == null) {
-      setState(() {
-        _isLoadingRequests = false;
-        _error = 'Not logged in.';
-      });
+      setState(() => _error = 'Not logged in.');
+      _isLoadingRequests = false;
       return;
     }
+
     try {
-      print('Fetching requests for user: $userId | isManager: $_isManager');
-      late final PostgrestList response;
-      if (_isOfficeManager || _isManager) {
+      PostgrestList response;
+
+      if (_isOfficeManager) {
+        // Office manager sees ONLY managers' requests
+        response = await supabase
+            .rpc('get_verlof_for_managers_only', params: {'current_user_id': userId});
+      }
+      else if (_isManager) {
+        // Regular manager sees their team (RLS handles it)
         response = await supabase
             .from('verlof')
             .select('*')
             .order('created_at', ascending: false);
-      } else {
+      }
+      else {
+        // Normal user sees only own
         response = await supabase
             .from('verlof')
             .select('*')
             .eq('user_id', userId)
             .order('created_at', ascending: false);
       }
-      print('Fetched ${response.length} requests');
+
       final List<Map<String, dynamic>> requests = List.from(response);
+
       setState(() {
         _requests = requests;
         _events = _buildEventsMap(requests);
@@ -187,10 +202,9 @@ class _MobileLayoutState extends State<MobileLayout> {
       });
     } catch (e, st) {
       print('ERROR in _fetchRequests: $e');
-      print(st);
       setState(() {
         _isLoadingRequests = false;
-        _error = 'Failed to load requests: $e';
+        _error = 'Failed to load requests';
       });
     }
   }
@@ -636,7 +650,7 @@ class _MobileLayoutState extends State<MobileLayout> {
                                       ),
                                     ),
                                     const SizedBox(height: 32),
-                                    if (!_isManager)
+                                    if (!_isOfficeManager)
                                       Container(
                                         width: double.infinity,
                                         padding: const EdgeInsets.all(20),
@@ -664,7 +678,7 @@ class _MobileLayoutState extends State<MobileLayout> {
                                             ),
                                             const SizedBox(height: 8),
                                             const Text(
-                                              'Instantly call in sick for 1 day (today or any date)',
+                                              'Instantly call in sick for 1 day',
                                               style: TextStyle(color: Colors.redAccent),
                                             ),
                                             const SizedBox(height: 16),
@@ -695,9 +709,10 @@ class _MobileLayoutState extends State<MobileLayout> {
 
                                     const SizedBox(height: 32),
 
-                                    if (!_isManager) ...[
+                                    if (!_isOfficeManager) ...[
                                       Text('New Leave Request', style: const TextStyle(fontSize: 18, fontWeight: FontWeight.bold)),
                                       const SizedBox(height: 16),
+                                      if (!_isOfficeManager)
                                       DropdownButtonFormField<String>(
                                         value: _selectedVerlofType,
                                         decoration: const InputDecoration(
@@ -1070,56 +1085,71 @@ class _DesktopLayoutState extends State<DesktopLayout> {
   }
 
   Future<void> _fetchLeaveBalance() async {
+    final userId = supabase.auth.currentUser?.id;
+    if (userId == null) {
+      setState(() => _remainingLeaveDays = 0);
+      return;
+    }
+
     try {
       final response = await supabase
-          .from('my_leave_balance')
-          .select('remaining_days')
-          .single();
+          .from('leave_balance')
+          .select('total_days, used_days')
+          .eq('user_id', userId)
+          .eq('year', DateTime.now().year)  // current year
+          .maybeSingle();
 
-      setState(() {
-        _remainingLeaveDays = response['remaining_days'] as int;
-        _error = null;
-      });
+      if (response == null) {
+        setState(() => _remainingLeaveDays = 0);
+        return;
+      }
+
+      final total = (response['total_days'] as num?)?.toInt() ?? 28;
+      final used = (response['used_days'] as num?)?.toInt() ?? 0;
+
+      setState(() => _remainingLeaveDays = total - used);
     } catch (e) {
-      print('Balance fetch error: $e');
-      setState(() => _error = 'Failed to load leave balance');
+      print('Balance error: $e');
+      setState(() => _remainingLeaveDays = 0);
     }
   }
   
   Future<void> _fetchRequests() async {
     setState(() => _isLoadingRequests = true);
-    if (!await _validateSession()) {
-      setState(() {
-        _isLoadingRequests = false;
-        _error = 'Session expired. Please log in again.';
-      });
-      return;
-    }
+
     final userId = supabase.auth.currentUser?.id;
     if (userId == null) {
-      setState(() {
-        _isLoadingRequests = false;
-        _error = 'Not logged in.';
-      });
+      setState(() => _error = 'Not logged in.');
+      _isLoadingRequests = false;
       return;
     }
+
     try {
-      print('Fetching requests for user: $userId | isManager: $_isManager');
-      late final PostgrestList response;
-      if (_isOfficeManager || _isManager) {
+      PostgrestList response;
+
+      if (_isOfficeManager) {
+        // Office manager sees ONLY managers' requests
+        response = await supabase
+            .rpc('get_verlof_for_managers_only', params: {'current_user_id': userId});
+      }
+      else if (_isManager) {
+        // Regular manager sees their team (RLS handles it)
         response = await supabase
             .from('verlof')
             .select('*')
             .order('created_at', ascending: false);
-      } else {
+      }
+      else {
+        // Normal user sees only own
         response = await supabase
             .from('verlof')
             .select('*')
             .eq('user_id', userId)
             .order('created_at', ascending: false);
       }
-      print('Fetched ${response.length} requests');
+
       final List<Map<String, dynamic>> requests = List.from(response);
+
       setState(() {
         _requests = requests;
         _events = _buildEventsMap(requests);
@@ -1128,10 +1158,9 @@ class _DesktopLayoutState extends State<DesktopLayout> {
       });
     } catch (e, st) {
       print('ERROR in _fetchRequests: $e');
-      print(st);
       setState(() {
         _isLoadingRequests = false;
-        _error = 'Failed to load requests: $e';
+        _error = 'Failed to load requests';
       });
     }
   }
@@ -1589,6 +1618,7 @@ class _DesktopLayoutState extends State<DesktopLayout> {
                                 ),
                               ),
                               const SizedBox(height: 16),
+                              if (!_isOfficeManager)
                               Container(
                                 width: double.infinity,
                                 padding: const EdgeInsets.all(20),
@@ -1622,14 +1652,12 @@ class _DesktopLayoutState extends State<DesktopLayout> {
                                     SizedBox(
                                       width: double.infinity,
                                       child: ElevatedButton.icon(
-                                      onPressed: _isSubmittingQuickSick ? null : _submitQuickSick,
+                                        onPressed: _isSubmittingQuickSick ? null : _submitQuickSick,
                                         icon: _isSubmittingQuickSick
                                             ? const SizedBox(width: 20, height: 20, child: CircularProgressIndicator(color: Colors.white, strokeWidth: 2))
                                             : const Icon(Icons.sick, color: Colors.white),
                                         label: Text(
-                                          _isSubmittingQuickSick
-                                              ? 'Submitting...'
-                                              : 'Call in Sick Today',
+                                          _isSubmittingQuickSick ? 'Submitting...' : 'Call in Sick Today',
                                           style: const TextStyle(fontSize: 17, fontWeight: FontWeight.bold, color: Colors.white),
                                         ),
                                         style: ElevatedButton.styleFrom(
@@ -1758,10 +1786,12 @@ class _DesktopLayoutState extends State<DesktopLayout> {
                                 ),
                                 const SizedBox(height: 32),
                                 Text(
-                                  _isManager ? 'All Team Requests' : 'New Leave Request',
+                                  _isManager || _isOfficeManager ? 'Manager Requests' : 'New Leave Request',
                                   style: const TextStyle(fontSize: 18, fontWeight: FontWeight.bold),
                                 ),
                                 const SizedBox(height: 16),
+
+                                if (!_isOfficeManager) ...[
                                   DropdownButtonFormField<String>(
                                     value: _selectedVerlofType,
                                     decoration: const InputDecoration(
@@ -1821,8 +1851,7 @@ class _DesktopLayoutState extends State<DesktopLayout> {
                                         foregroundColor: Colors.white,
                                         backgroundColor: Colors.red,
                                         padding: const EdgeInsets.symmetric(vertical: 16),
-                                        shape: RoundedRectangleBorder(
-                                            borderRadius: BorderRadius.circular(12)),
+                                        shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(12)),
                                       ),
                                       child: _isSubmitting
                                           ? const CircularProgressIndicator(color: Colors.white)
@@ -1830,6 +1859,7 @@ class _DesktopLayoutState extends State<DesktopLayout> {
                                     ),
                                   ),
                                   const SizedBox(height: 32),
+                                ],
                                 Text(
                                   _isManager ? 'Team Requests' : 'My Requests',
                                   style: Theme.of(context).textTheme.titleLarge?.copyWith(fontWeight: FontWeight.bold),
