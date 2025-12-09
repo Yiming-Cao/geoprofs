@@ -1,19 +1,21 @@
 import 'package:flutter/material.dart';
+import 'package:geoprof/pages/officemanager.dart';
 import 'package:supabase_flutter/supabase_flutter.dart';
 import 'package:geoprof/pages/dashboard.dart';
 import 'package:geoprof/pages/admin.dart';
 import 'package:geoprof/pages/home.dart';
 import 'package:geoprof/pages/login.dart';
-import 'package:geoprof/pages/register.dart';
 import 'package:geoprof/pages/profile.dart';
 import 'package:geoprof/pages/verlof.dart';
 
 Future<void> main() async {
+  
   WidgetsFlutterBinding.ensureInitialized();
   try {
     await Supabase.initialize(
       url: 'https://jkvmrzfzmvqedynygkms.supabase.co',
       anonKey: 'eyJhbGciOiJIUzI1NiIsInR5cCI6IkpXVCJ9.eyJpc3MiOiJzdXBhYmFzZSIsInJlZiI6Imprdm1yemZ6bXZxZWR5bnlna21zIiwicm9sZSI6ImFub24iLCJpYXQiOjE3NTgwMjQyNDEsImV4cCI6MjA3MzYwMDI0MX0.APsSFMSpz1lDBrLWMFOC05_ic1eODAdCdceoh4SBPHY',
+      
     );
     runApp(const MyApp());
   } catch (e) {
@@ -36,9 +38,9 @@ class MyApp extends StatelessWidget {
         '/login': (context) => const LoginPage(),
         '/dashboard': (context) => const Dashboard(),
         '/admin': (context) => const AdminPage(),
-        '/register': (context) => const RegisterPage(),
         '/profile': (context) => const ProfilePage(),
         '/verlof': (context) => const VerlofPage(),
+        '/officemanager':(context) => const OfficeManagerDashboard(),
       },
     );
   }
