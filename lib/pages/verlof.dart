@@ -88,7 +88,6 @@ class _MobileLayoutState extends State<MobileLayout> {
         return;
       }
 
-      print('JWT has no user_role. Falling back to permissions table...');
       final userId = supabase.auth.currentUser?.id;
       if (userId == null) throw 'No user ID';
 
@@ -212,15 +211,23 @@ class _MobileLayoutState extends State<MobileLayout> {
   Map<DateTime, List<Map<String, dynamic>>> _buildEventsMap(
       List<Map<String, dynamic>> requests) {
     final Map<DateTime, List<Map<String, dynamic>>> events = {};
+
     for (final req in requests) {
       final startStr = req['start'] as String?;
       final endStr = req['end_time'] as String?;
       if (startStr == null || endStr == null) continue;
+
+      // Parse as UTC, then convert to local once
       final startUtc = DateTime.tryParse(startStr);
       final endUtc = DateTime.tryParse(endStr);
       if (startUtc == null || endUtc == null) continue;
-      var current = DateTime.utc(startUtc.year, startUtc.month, startUtc.day);
-      final end = DateTime.utc(endUtc.year, endUtc.month, endUtc.day);
+
+      final startLocal = startUtc.toLocal();
+      final endLocal = endUtc.toLocal();
+
+      var current = DateTime(startLocal.year, startLocal.month, startLocal.day);
+      final end = DateTime(endLocal.year, endLocal.month, endLocal.day);
+
       while (!current.isAfter(end)) {
         final key = DateTime(current.year, current.month, current.day);
         events.putIfAbsent(key, () => []).add(req);
@@ -1044,7 +1051,6 @@ class _DesktopLayoutState extends State<DesktopLayout> {
         return;
       }
 
-      print('JWT has no user_role. Falling back to permissions table...');
       final userId = supabase.auth.currentUser?.id;
       if (userId == null) throw 'No user ID';
 
@@ -1168,15 +1174,23 @@ class _DesktopLayoutState extends State<DesktopLayout> {
   Map<DateTime, List<Map<String, dynamic>>> _buildEventsMap(
       List<Map<String, dynamic>> requests) {
     final Map<DateTime, List<Map<String, dynamic>>> events = {};
+
     for (final req in requests) {
       final startStr = req['start'] as String?;
       final endStr = req['end_time'] as String?;
       if (startStr == null || endStr == null) continue;
+
+      // Parse as UTC, then convert to local once
       final startUtc = DateTime.tryParse(startStr);
       final endUtc = DateTime.tryParse(endStr);
       if (startUtc == null || endUtc == null) continue;
-      var current = DateTime.utc(startUtc.year, startUtc.month, startUtc.day);
-      final end = DateTime.utc(endUtc.year, endUtc.month, endUtc.day);
+
+      final startLocal = startUtc.toLocal();
+      final endLocal = endUtc.toLocal();
+
+      var current = DateTime(startLocal.year, startLocal.month, startLocal.day);
+      final end = DateTime(endLocal.year, endLocal.month, endLocal.day);
+
       while (!current.isAfter(end)) {
         final key = DateTime(current.year, current.month, current.day);
         events.putIfAbsent(key, () => []).add(req);
