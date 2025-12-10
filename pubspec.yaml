@@ -33,6 +33,7 @@ dependencies:
   flutter_svg: ^2.0.9
   table_calendar: ^3.0.9
   supabase_flutter: ^2.5.0
+  shared_preferences: ^2.3.2
   image_picker: ^1.0.7
   http: ^1.2.1
   jwt_decode: ^0.3.1
