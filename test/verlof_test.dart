@@ -12,7 +12,6 @@ void main() {
           'eyJhbGciOiJIUzI1NiIsInR5cCI6IkpXVCJ9.eyJpc3MiOiJzdXBhYmFzZSIsInJlZiI6Imprdm1yemZ6bXZxZWR5bnlna21zIiwicm9sZSI6ImFub24iLCJpYXQiOjE3NTgwMjQyNDEsImV4cCI6MjA3MzYwMDI0MX0.APsSFMSpz1lDBrLWMFOC05_ic1eODAdCdceoh4SBPHY',
       authOptions: FlutterAuthClientOptions(
         autoRefreshToken: false,
-        localStorage: NoOpLocalStorage(),
       ),
     );
   });
@@ -23,9 +22,7 @@ void main() {
 
   group('Verlof Fetch Tests - Real Supabase (WORKS)', () {
     test('Fetch all verlof records', () async {
-      final response = await Supabase.instance.client
-          .from('verlof')
-          .select();
+      final response = await Supabase.instance.client.from('verlof').select();
 
       expect(response, isA<List>());
       print('Fetched ${response.length} verlof records');
@@ -42,21 +39,4 @@ void main() {
       print('First record ID: ${row['id']}');
     });
   });
-}
-
-class NoOpLocalStorage implements LocalStorage {
-  @override
-  Future<void> initialize() async {}
-
-  @override
-  String? get accessToken => null;
-
-  @override
-  bool get hasAccessToken => false;
-
-  @override
-  Future<void> persistSession(String persistSessionString) async {}
-
-  @override
-  Future<void> removePersistedSession() async {}
 }
