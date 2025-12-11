@@ -14,6 +14,7 @@ class _NavbarState extends State<Navbar> {
 
   bool _isLoggedIn = false;
   bool _isAdmin = false;
+  bool _isOfficeManager = false;
 
   @override
   void initState() {
@@ -35,6 +36,9 @@ class _NavbarState extends State<Navbar> {
 
     if (user == null) {
       setState(() => _isAdmin = false);
+      setState(() {
+        _isOfficeManager = false;
+      });
       return;
     }
 
@@ -46,14 +50,17 @@ class _NavbarState extends State<Navbar> {
           .maybeSingle();
 
       final bool isAdmin = response != null && (response['role'] as String?) == 'admin';
+      final bool isOfficeManager = response != null && (response['role'] as String?) == 'office_manager';
 
       if (mounted) {
         setState(() => _isAdmin = isAdmin);
+        setState(() => _isOfficeManager = isOfficeManager);
       }
     } catch (e) {
       // Als er iets misgaat → geen admin rechten tonen
       if (mounted) {
         setState(() => _isAdmin = false);
+        setState(() => _isOfficeManager = false);
       }
     }
   }
@@ -77,6 +84,7 @@ class _NavbarState extends State<Navbar> {
       3 => '/mail',
       4 => '/notifications',
       5 => '/admin',
+      6 => '/officemanager',
       _ => null,
     };
   }
@@ -121,6 +129,9 @@ class _NavbarState extends State<Navbar> {
           // ADMIN ICOON → ALLEEN VOOR ADMINS (zelfde check als admin.dart)
           if (_isAdmin)
             _buildNavItem(Icons.admin_panel_settings, 5),
+          // Office Manager 图标 → 仅限办公室经理
+          if (_isOfficeManager)
+            _buildNavItem(Icons.business, 6),
         ],
       ),
     );
