@@ -1,3 +1,4 @@
+import 'package:flutter/foundation.dart';
 import 'package:flutter_test/flutter_test.dart';
 import 'package:geoprof/components/auth.dart';
 import 'package:geoprof/pages/officemanager.dart';
@@ -16,18 +17,18 @@ void main() {
         autoRefreshToken: false,
       ),
     );
+
+    final SupabaseClient supabase = Supabase.instance.client;
   });
-  
-  SupabaseClient supabase = Supabase.instance.client;
 
   tearDown(() async {
-    if (supabase.auth.currentSession != null) {
-      await supabase.auth.signOut();
+    if (Supabase.instance.client.auth.currentSession != null) {
+      await Supabase.instance.client.auth.signOut();
     }
   });
 
   Future<List<Employee>> getUsers() async {
-    final res = await supabase.functions.invoke('super-processor');
+    final res = await Supabase.instance.client.functions.invoke('super-processor');
 
     if (res.data == null) {
       return [];
@@ -44,14 +45,23 @@ void main() {
 
   Future<bool> createUser(String email, String name, String role) async {
     try {
-      final res = await supabase.functions.invoke('quick-api',body: {'email': email,'name': name,'role': role});
+      final res = await Supabase.instance.client.functions.invoke('quick-api',body: {'email': email, 'name': name, 'role': role});
       return res.status >= 200 && res.status < 300;
     } catch (_) {
       return false;
     }
   }
 
-  group('User creation test not logged in, as worker, as office manager and as office manager but with office manager role)',() {
+  Future<bool> deleteUser(String uuid) async {
+    try {
+      final res = await Supabase.instance.client.functions.invoke('dynamic-worker', body: {'user_id': uuid});
+      return res.status >= 200 && res.status < 300;
+    } catch (_) {
+      return false;
+    }
+  }
+
+  group('User creation test not logged in, as worker, as office manager and as office manager but with office manager role', () {
     test('Create user while not logged in', () async {
       final result = await createUser('tester123@gmail.com', 'tester224', 'worker');
 
@@ -70,7 +80,7 @@ void main() {
 
       expect(result, isFalse);
 
-      await supabase.auth.signOut();
+      await Supabase.instance.client.auth.signOut();
       await auth.loginUser('test@officemanager.com', 'w8woord123');
 
       final users = await getUsers();
@@ -84,23 +94,28 @@ void main() {
 
       expect(result, isTrue);
 
+      await Future.delayed(const Duration(seconds: 1));
       final users = await getUsers();
-      expect(users.any((u) => u.name == 'tester224'), isTrue);
-
-      await supabase.auth.signOut();
+      final Employee user = users.firstWhere((u) => u.name == 'tester224');
+      debugPrint('user UUID: ${user.uuid}');
+      debugPrint('user Name: ${user.uuid.isNotEmpty}');
+      final userExists = user.uuid.isNotEmpty;
+      expect(userExists, isTrue);
+      expect(await deleteUser(user.uuid), isTrue);
+      await Supabase.instance.client.auth.signOut();
     });
 
     test('Office manager cannot create another office manager', () async {
       await auth.loginUser('test@officemanager.com', 'w8woord123');
 
-      final result = await createUser('tester224@gmail.com','tester224','office_manager',);
+      final result = await createUser('tester224@gmail.com', 'tester224', 'office_manager');
 
       expect(result, isFalse);
 
       final users = await getUsers();
-      expect(users.any((u) => u.name == 'tester224'), isFalse);
+      expect(users.any((u) => u.name == 'tester224' && u.role == 'office_manager'), isFalse);
 
-      await supabase.auth.signOut();
+      await Supabase.instance.client.auth.signOut();
     });
   });
 }
