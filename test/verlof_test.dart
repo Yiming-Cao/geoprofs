@@ -20,7 +20,9 @@ void main() {
     await Supabase.instance.client.auth.signOut();
   });
 
-  group('Verlof Fetch Tests - Authenticated (RLS works)', () {
+  group('Verlof Tests - Create, Fetch, Delete (Authenticated)', () {
+    late String currentUserId;
+
     setUp(() async {
       final response = await Supabase.instance.client.auth.signInWithPassword(
         email: 'test@example.com',
@@ -28,46 +30,82 @@ void main() {
       );
 
       if (response.session == null) {
-        fail('Login failed - check credentials or RLS policy');
+        fail('Login failed - check credentials');
       }
 
-      print('Logged in as ${response.user?.email}');
+      currentUserId = response.user!.id;
+      print('Logged in as ${response.user?.email} (ID: $currentUserId)');
     });
 
-    test('Fetch all verlof records - should work with RLS', () async {
-      final response = await Supabase.instance.client
+    test('Create a new verlof record', () async {
+      final now = DateTime.now();
+      final start = now.toUtc().toIso8601String();
+      final end = now.add(const Duration(days: 1)).toUtc().toIso8601String();
+
+      final insertResponse = await Supabase.instance.client
           .from('verlof')
-          .select();
+          .insert({
+        'user_id': currentUserId,
+        'start': start,
+        'end_time': end,
+        'reason': 'Test leave from integration test',
+        'verlof_type': 'holiday',
+        'verlof_state': 'pending',
+        'days_count': 1,
+      })
+          .select()
+          .single();
 
-      expect(response, isA<List>());
-      print('Fetched ${response.length} verlof records (authenticated)');
+      expect(insertResponse['id'], isA<int>());
+      expect(insertResponse['user_id'], currentUserId);
+      expect(insertResponse['reason'], 'Test leave from integration test');
+
+      print('Created verlof record with ID: ${insertResponse['id']}');
     });
 
-    test('Fetch first verlof record', () async {
-      final row = await Supabase.instance.client
+    test('Create verlof and then delete it', () async {
+      final created = await Supabase.instance.client
+          .from('verlof')
+          .insert({
+        'user_id': currentUserId,
+        'start': DateTime.now().toUtc().toIso8601String(),
+        'end_time': DateTime.now().add(const Duration(days: 2)).toUtc().toIso8601String(),
+        'reason': 'Test to be deleted',
+        'verlof_type': 'personal',
+        'verlof_state': 'pending',
+        'days_count': 2,
+      })
+          .select()
+          .single();
+
+      final createdId = created['id'];
+      print('Created record ID: $createdId');
+
+      // Delete
+      await Supabase.instance.client
+          .from('verlof')
+          .delete()
+          .eq('id', createdId);
+
+      // verify it's gone
+      final deleted = await Supabase.instance.client
           .from('verlof')
           .select()
-          .limit(1)
-          .maybeSingle();
+          .eq('id', createdId);
 
-      if (row != null) {
-        expect(row, isA<Map<String, dynamic>>());
-        print('First record ID: ${row['id']}');
-      } else {
-        print('No verlof records found (table empty)');
-      }
+      expect(deleted, isEmpty);
+      print('Record $createdId successfully deleted');
     });
 
-    test('Fetch only current user\'s verlof', () async {
-      final userId = Supabase.instance.client.auth.currentUser!.id;
-
+    // Your existing fetch tests (optional)
+    test('Fetch current user\'s verlof after creation', () async {
       final records = await Supabase.instance.client
           .from('verlof')
           .select()
-          .eq('user_id', userId);
+          .eq('user_id', currentUserId);
 
       expect(records, isA<List>());
-      print('Found ${records.length} records for current user');
+      print('User has ${records.length} verlof records');
     });
   });
 }
