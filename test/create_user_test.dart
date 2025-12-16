@@ -97,8 +97,6 @@ void main() {
       await Future.delayed(const Duration(seconds: 1));
       final users = await getUsers();
       final Employee user = users.firstWhere((u) => u.name == 'tester224');
-      debugPrint('user UUID: ${user.uuid}');
-      debugPrint('user Name: ${user.uuid.isNotEmpty}');
       final userExists = user.uuid.isNotEmpty;
       expect(userExists, isTrue);
       expect(await deleteUser(user.uuid), isTrue);
