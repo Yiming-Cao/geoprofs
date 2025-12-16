@@ -87,7 +87,7 @@ Future<List<Employee>> loadEmployees() async {
   }
 }
 
-Future<bool> createUser(String email, String name, String role) async {
+Future<bool> createUser(String email, String name, String role, ) async {
   try {
     final response = await supabase.functions.invoke('quick-api', body: {'email': email,'name': name,'role': role});
     return true;
