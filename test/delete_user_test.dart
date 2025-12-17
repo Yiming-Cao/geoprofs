@@ -1,3 +1,4 @@
+import 'package:flutter/widgets.dart';
 import 'package:flutter_test/flutter_test.dart';
 import 'package:geoprof/components/auth.dart';
 import 'package:geoprof/pages/officemanager.dart';
@@ -58,63 +59,66 @@ void main() {
     }
   }
 
-  group('User creation test not logged in, as worker, as office manager and as office manager but with office manager role', () {
-    test('Create user while not logged in', () async {
-      // try to create user
-      final result = await createUser('tester123@gmail.com', 'tester224', 'worker');
-
+  group('User delete test not logged in, as worker, as office manager and as office manager but with office manager role', () {
+    test('Delete user while not logged in', () async {
+      // try to delete user
+      bool result = await deleteUser('8b65ba2e-ba61-48af-bf44-a0093bdde34e');
       expect(result, isFalse);
 
-      // check if user exists
-      await auth.loginUser('test@officemanager.com', 'w8woord123');
-      final users = await getUsers();
-
-      expect(users.any((u) => u.name == 'tester224'), isFalse);
-    });
-
-    test('Create user while logged in as worker', () async {
-      await auth.loginUser('test@example.com', 'w8woord123');
-      // try to create user
-      final result = await createUser('tester123@gmail.com', 'tester224', 'worker');
-
-      expect(result, isFalse);
-
-      // check if user exists
       await Supabase.instance.client.auth.signOut();
       await auth.loginUser('test@officemanager.com', 'w8woord123');
 
+      // is deleted?
       final users = await getUsers();
-      expect(users.any((u) => u.name == 'tester224'), isFalse);
+      expect(users.any((u) => u.uuid == '8b65ba2e-ba61-48af-bf44-a0093bdde34e'), isFalse);
     });
 
-    test('Create user while logged in as office manager', () async {
+    test('Delete user while logged in as worker', () async {
+      await auth.loginUser('test@example.com', 'w8woord123');
+      // try to delete user
+      bool result = await deleteUser('8b65ba2e-ba61-48af-bf44-a0093bdde34e');
+      expect(result, isFalse);
+
+      await Supabase.instance.client.auth.signOut();
       await auth.loginUser('test@officemanager.com', 'w8woord123');
-      // try to create user
 
-      final result = await createUser('tester123@gmail.com', 'tester224', 'worker');
-      expect(result, isTrue);
+      // is deleted?
+      final users = await getUsers();
+      expect(users.any((u) => u.uuid == '8b65ba2e-ba61-48af-bf44-a0093bdde34e'), isFalse);
+    });
 
-      // check if user exists
+    test('Delete user while logged in as office manager', () async {
+      await auth.loginUser('test@officemanager.com', 'w8woord123');
+      // create user to delete
+      final createResult = await createUser('tester123@gmail.com', 'tester224', 'worker');
+      expect(createResult, isTrue);
       await Future.delayed(const Duration(seconds: 1));
+
+      // find id to delete
       final users = await getUsers();
       final Employee user = users.firstWhere((u) => u.name == 'tester224');
-      final userExists = user.uuid.isNotEmpty;
-      expect(userExists, isTrue);
-      expect(await deleteUser(user.uuid), isTrue);
+      final bool result = await deleteUser(user.uuid);
+      expect(result, isTrue);
+      await Future.delayed(const Duration(seconds: 1));
+
+      // is deleted?
+      final usersAfterDelete = await getUsers();
+      final bool userWasDeleted = !usersAfterDelete.any((u) => u.name == 'tester224');
+      expect(userWasDeleted, isTrue);
       await Supabase.instance.client.auth.signOut();
     });
 
-    test('Office manager cannot create another office manager', () async {
+    test('Delete office manager as office manager', () async {
       await auth.loginUser('test@officemanager.com', 'w8woord123');
-      // try to create user
-      final result = await createUser('tester224@gmail.com', 'tester224', 'office_manager');
-
+      // try to delete office manager (self)
+      bool result = await deleteUser('8b65ba2e-ba61-48af-bf44-a0093bdde34e');
       expect(result, isFalse);
+      await Future.delayed(const Duration(seconds: 1));
+      await Supabase.instance.client.auth.signOut();
 
-      // check if user exists
-      final users = await getUsers();
-      expect(users.any((u) => u.name == 'tester224' && u.role == 'office_manager'), isFalse);
-
+      // is deleted?
+      final login = await auth.loginUser('test@officemanager.com', 'w8woord123');
+      expect(login, true);
       await Supabase.instance.client.auth.signOut();
     });
   });
