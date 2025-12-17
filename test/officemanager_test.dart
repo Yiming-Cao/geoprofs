@@ -25,9 +25,10 @@ void main() {
   });
 
   Future<List<Employee>> getUsers() async {
-    final res = await Supabase.instance.client.functions.invoke('super-processor');
-
-    if (res.data == null) {
+    late final res;
+    try {
+      res = await Supabase.instance.client.functions.invoke('super-processor');
+    } catch (e) {
       return [];
     }
 
@@ -49,8 +50,8 @@ void main() {
     }
   }
 
-    Future<bool> updateUser({required String uuid, String? email, String? name, String? role}) async {
-      try {
+  Future<bool> updateUser({required String uuid, String? email, String? name, String? role}) async {
+    try {
       final body = <String, dynamic>{};
       body['user_id'] = uuid;
       if (email != null) body['email'] = email;
@@ -59,10 +60,10 @@ void main() {
       
       final res = await Supabase.instance.client.functions.invoke('super-api', body: body);
       return res.status >= 200 && res.status < 300;
-      } catch (_) {
+    } catch (_) {
       return false;
-      }
     }
+  }
 
   Future<bool> deleteUser(String uuid) async {
     try {
@@ -205,7 +206,7 @@ void main() {
   
   
   
-  group('User update test not logged in, as worker, as office manager and as office manager but with office manager role', () {
+  group('User update test not logged in, logged in as worker, logged in as office manager, as office manager but set role office manager and as office manager but with office manager role', () {
     test('Update user while not logged in', () async {
       // try to update user
       bool result = await updateUser(uuid: '84048ee0-09bc-4a6a-b3ef-f28c4b392ec2', email: 'test2@example.com', name: 'login-test12', role: 'worker');
@@ -294,6 +295,32 @@ void main() {
       // is updated?
       final login = await auth.loginUser('test@officemanager.com', 'w8woord123');
       expect(login, true);
+      await Supabase.instance.client.auth.signOut();
+    });
+  });
+
+
+
+  group('Get users test, not logged in, logged in as worker and logged in as office manager', () {
+    test('Get users while not logged in (unauthorized)', () async {
+      // try to get users
+      final users = await getUsers();
+      expect(users.length, equals(0));
+    });
+
+    test('Get users while logged in as worker (unauthorized)', () async {
+      await auth.loginUser('test@example.com', 'w8woord123');
+      // try to get users
+      final users = await getUsers();
+      expect(users.length, equals(0));
+      await Supabase.instance.client.auth.signOut();
+    });
+
+    test('Get users while logged in as office manager (authorized)', () async {
+      await auth.loginUser('test@officemanager.com', 'w8woord123');
+      // try to get users
+      final users = await getUsers();
+      expect(users.length, greaterThan(0));
       await Supabase.instance.client.auth.signOut();
     });
   });
