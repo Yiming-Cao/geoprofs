@@ -740,6 +740,7 @@ class _MobileLayoutState extends State<MobileLayout> {
                                       ),
                                       const SizedBox(height: 12),
                                       TextField(
+                                        key: const Key('reason_field'), // ← Added for E2E test
                                         controller: _reasonController,
                                         decoration: const InputDecoration(
                                           labelText: 'Custom Reason',
@@ -750,6 +751,7 @@ class _MobileLayoutState extends State<MobileLayout> {
                                       ),
                                       const SizedBox(height: 12),
                                       TextField(
+                                        key: const Key('start_date_field'), // ← Added for E2E test
                                         controller: _startDateController,
                                         decoration: const InputDecoration(
                                           labelText: 'Start Date',
@@ -761,6 +763,7 @@ class _MobileLayoutState extends State<MobileLayout> {
                                       ),
                                       const SizedBox(height: 12),
                                       TextField(
+                                        key: const Key('end_date_field'), // ← Added for E2E test
                                         controller: _endDateController,
                                         decoration: const InputDecoration(
                                           labelText: 'End Date',
@@ -774,6 +777,7 @@ class _MobileLayoutState extends State<MobileLayout> {
                                       SizedBox(
                                         width: double.infinity,
                                         child: ElevatedButton(
+                                          key: const Key('submit_button'), // ← Added for E2E test
                                           onPressed: _isSubmitting ? null : _submitRequest,
                                           style: ElevatedButton.styleFrom(
                                             backgroundColor: Colors.red,
@@ -1826,6 +1830,7 @@ class _DesktopLayoutState extends State<DesktopLayout> {
                                   ),
                                   const SizedBox(height: 12),
                                   TextField(
+                                    key: const Key('reason_field'), // ← Added for E2E test
                                     controller: _reasonController,
                                     decoration: const InputDecoration(
                                       labelText: 'Custom Reason',
@@ -1836,6 +1841,7 @@ class _DesktopLayoutState extends State<DesktopLayout> {
                                   ),
                                   const SizedBox(height: 12),
                                   TextField(
+                                    key: const Key('start_date_field'), // ← Added for E2E test
                                     controller: _startDateController,
                                     decoration: const InputDecoration(
                                       labelText: 'Start Date',
@@ -1847,6 +1853,7 @@ class _DesktopLayoutState extends State<DesktopLayout> {
                                   ),
                                   const SizedBox(height: 12),
                                   TextField(
+                                    key: const Key('end_date_field'), // ← Added for E2E test
                                     controller: _endDateController,
                                     decoration: const InputDecoration(
                                       labelText: 'End Date',
@@ -1860,9 +1867,9 @@ class _DesktopLayoutState extends State<DesktopLayout> {
                                   SizedBox(
                                     width: double.infinity,
                                     child: ElevatedButton(
+                                      key: const Key('submit_button'), // ← Added for E2E test
                                       onPressed: _isSubmitting ? null : _submitRequest,
                                       style: ElevatedButton.styleFrom(
-                                        foregroundColor: Colors.white,
                                         backgroundColor: Colors.red,
                                         padding: const EdgeInsets.symmetric(vertical: 16),
                                         shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(12)),
