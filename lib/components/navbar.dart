@@ -15,15 +15,18 @@ class _NavbarState extends State<Navbar> {
   bool _isLoggedIn = false;
   bool _isAdmin = false;
   bool _isOfficeManager = false;
+  bool _hasNotifications = false;
 
   @override
   void initState() {
     super.initState();
     _checkAuthAndRole();
+    _checkNotifications();
     
     // Luister naar login/logout veranderingen
     supabase.auth.onAuthStateChange.listen((_) {
       _checkAuthAndRole();
+      _checkNotifications();
     });
   }
 
@@ -62,6 +65,32 @@ class _NavbarState extends State<Navbar> {
         setState(() => _isAdmin = false);
         setState(() => _isOfficeManager = false);
       }
+    }
+  }
+
+  Future<void> _checkNotifications() async {
+    final user = supabase.auth.currentUser;
+    if (user == null) {
+      if (mounted) setState(() => _hasNotifications = false);
+      return;
+    }
+
+    try {
+      // Query for leave requests for the current user that are not pending
+      dynamic builder = supabase.from('verlof').select();
+      builder = (builder as dynamic).eq('user_id', user.id).neq('status', 'pending').limit(1);
+      final response = await (builder as dynamic).execute();
+
+      bool has = false;
+      if (response != null) {
+        final data = response.data ?? response;
+        if (data is List && data.isNotEmpty) has = true;
+      }
+
+      if (mounted) setState(() => _hasNotifications = has);
+    } catch (e) {
+      // ignore errors, keep notifications false
+      if (mounted) setState(() => _hasNotifications = false);
     }
   }
 
@@ -138,6 +167,34 @@ class _NavbarState extends State<Navbar> {
   }
 
   Widget _buildNavItem(IconData icon, int index) {
+    // For notifications, we show a small red dot when there are notifications
+    if (icon == Icons.notifications) {
+      return SizedBox(
+        width: 40,
+        child: Stack(
+          alignment: Alignment.center,
+          children: [
+            IconButton(
+              padding: EdgeInsets.zero,
+              icon: Icon(icon, size: 24),
+              color: _selectedIndex == index ? const Color(0xFFEE6055) : Colors.white,
+              onPressed: () => _onItemTapped(index),
+            ),
+            if (_hasNotifications)
+              Positioned(
+                right: 8,
+                top: 8,
+                child: Container(
+                  width: 8,
+                  height: 8,
+                  decoration: BoxDecoration(color: Colors.red, shape: BoxShape.circle),
+                ),
+              ),
+          ],
+        ),
+      );
+    }
+
     return SizedBox(
       width: 40,
       child: IconButton(

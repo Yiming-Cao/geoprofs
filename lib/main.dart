@@ -7,6 +7,7 @@ import 'package:geoprof/pages/home.dart';
 import 'package:geoprof/pages/login.dart';
 import 'package:geoprof/pages/profile.dart';
 import 'package:geoprof/pages/verlof.dart';
+import 'package:geoprof/pages/notification.dart';
 
 Future<void> main() async {
   
@@ -40,6 +41,7 @@ class MyApp extends StatelessWidget {
         '/admin': (context) => const AdminPage(),
         '/profile': (context) => const ProfilePage(),
         '/verlof': (context) => const VerlofPage(),
+        '/notifications': (context) => const NotificationPage(),
         '/officemanager':(context) => const OfficeManagerDashboard(),
       },
     );
