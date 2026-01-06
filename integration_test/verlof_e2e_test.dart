@@ -1,7 +1,6 @@
 import 'package:flutter/material.dart';
 import 'package:flutter_test/flutter_test.dart';
 import 'package:integration_test/integration_test.dart';
-
 import 'package:geoprof/main.dart' as app;
 
 void main() {
@@ -12,43 +11,67 @@ void main() {
       app.main();
       await tester.pumpAndSettle();
 
-      // 1. Login
-      await tester.enterText(find.byKey(const Key('email_field')), 'test@example.com');
-      await tester.enterText(find.byKey(const Key('password_field')), 'w8woord123');
+      // 1. Wait for login screen to fully load
+      await tester.pumpAndSettle(const Duration(seconds: 2));
+
+      // 2. Enter email and password (focus fields first)
+      final emailFinder = find.byKey(const Key('email_field'));
+      final passwordFinder = find.byKey(const Key('password_field'));
+
+      await tester.tap(emailFinder);
+      await tester.pumpAndSettle();
+      await tester.enterText(emailFinder, 'test@example.com');
+      await tester.pumpAndSettle();
+
+      await tester.tap(passwordFinder);
+      await tester.pumpAndSettle();
+      await tester.enterText(passwordFinder, 'w8woord123');
+      await tester.pumpAndSettle();
+
+      // 3. Tap login button
       await tester.tap(find.byKey(const Key('login_button')));
-      await tester.pumpAndSettle();
+      await tester.pumpAndSettle(const Duration(seconds: 3)); // wait for navigation
 
-      // Navigate to Verlof page
+      // 4. Navigate to Verlof page
       await tester.tap(find.text('Verlof'));
-      await tester.pumpAndSettle();
+      await tester.pumpAndSettle(const Duration(seconds: 2));
 
-      // 2. Create verlof (happy flow)
+      // 5. Create verlof request
+      // Tap Quick Type dropdown
       await tester.tap(find.text('Quick Type'));
       await tester.pumpAndSettle();
-      await tester.tap(find.text('holiday').last);
+      await tester.tap(find.text('holiday'));
       await tester.pumpAndSettle();
 
+      // Pick start date
       await tester.tap(find.byKey(const Key('start_date_field')));
       await tester.pumpAndSettle();
       await tester.tap(find.text('OK'));
       await tester.pumpAndSettle();
 
+      // Pick end date (same day for simplicity)
       await tester.tap(find.byKey(const Key('end_date_field')));
       await tester.pumpAndSettle();
       await tester.tap(find.text('OK'));
       await tester.pumpAndSettle();
 
+      // Enter reason
       await tester.enterText(find.byKey(const Key('reason_field')), 'E2E test request');
-      await tester.tap(find.text('Submit'));
       await tester.pumpAndSettle();
+
+      // Submit
+      await tester.tap(find.text('Submit'));
+      await tester.pumpAndSettle(const Duration(seconds: 2));
 
       expect(find.textContaining('Request submitted successfully'), findsOneWidget);
 
-      // 3. Delete it
+      // 6. Delete the request
       await tester.longPress(find.textContaining('E2E test request'));
       await tester.pumpAndSettle();
+
       await tester.tap(find.text('Delete'));
       await tester.pumpAndSettle();
+
       await tester.tap(find.text('Delete')); // confirm
       await tester.pumpAndSettle();
 
@@ -59,19 +82,32 @@ void main() {
       app.main();
       await tester.pumpAndSettle();
 
-      // Login
-      await tester.enterText(find.byKey(const Key('email_field')), 'test@example.com');
-      await tester.enterText(find.byKey(const Key('password_field')), 'w8woord123');
+      // Login (same as above)
+      final emailFinder = find.byKey(const Key('email_field'));
+      final passwordFinder = find.byKey(const Key('password_field'));
+
+      await tester.tap(emailFinder);
+      await tester.enterText(emailFinder, 'test@example.com');
+      await tester.pumpAndSettle();
+
+      await tester.tap(passwordFinder);
+      await tester.enterText(passwordFinder, 'w8woord123');
+      await tester.pumpAndSettle();
+
       await tester.tap(find.byKey(const Key('login_button')));
-      await tester.pumpAndSettle();
+      await tester.pumpAndSettle(const Duration(seconds: 3));
 
-      // Go to verlof
+      // Go to Verlof
       await tester.tap(find.text('Verlof'));
+      await tester.pumpAndSettle(const Duration(seconds: 2));
+
+      // Scroll to make Submit visible
+      await tester.drag(find.byType(SingleChildScrollView), const Offset(0, -400));
       await tester.pumpAndSettle();
 
-      // Submit empty
+      // Try to submit empty form
       await tester.tap(find.text('Submit'));
-      await tester.pumpAndSettle();
+      await tester.pumpAndSettle(const Duration(seconds: 1));
 
       expect(find.textContaining('Please select start and end date'), findsOneWidget);
       expect(find.textContaining('Please select a type or enter a reason'), findsOneWidget);
