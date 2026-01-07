@@ -1501,11 +1501,12 @@ class _DesktopLayoutState extends State<DesktopLayout> {
         child: Stack(
           children: [
             _isLoadingRequests
-                ? const Center(child: CircularProgressIndicator())
-                : Column(
+              ? const Center(child: CircularProgressIndicator())
+              : Column(
                   children: [
                   HeaderBar(),
-                  SingleChildScrollView(
+                  Expanded(
+                    child: SingleChildScrollView(
                       padding: const EdgeInsets.only(
                           top: 80, left: 16, right: 16, bottom: 100),
                       child: Row(
@@ -2049,7 +2050,8 @@ class _DesktopLayoutState extends State<DesktopLayout> {
                           ),
                         ],
                       ),
-                    )],
+                    )),
+                  ],
                 ),
               Positioned(
                 bottom: 24,
