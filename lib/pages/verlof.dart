@@ -1500,561 +1500,564 @@ class _DesktopLayoutState extends State<DesktopLayout> {
       body: BackgroundContainer(
         child: Stack(
           children: [
-            Positioned(top: 0, left: 0, right: 0, child: HeaderBar()),
             _isLoadingRequests
                 ? const Center(child: CircularProgressIndicator())
-                : SingleChildScrollView(
-                    padding: const EdgeInsets.only(
-                        top: 80, left: 16, right: 16, bottom: 100),
-                    child: Row(
-                      crossAxisAlignment: CrossAxisAlignment.start,
-                      children: [
-                        Expanded(
-                          flex: 2,
-                          child: Column(
-                            children: [
-                              Container(
-                                decoration: BoxDecoration(
-                                  color: Colors.grey[900],
-                                  borderRadius: BorderRadius.circular(16),
-                                ),
-                                padding: const EdgeInsets.all(12),
-                                child: TableCalendar(
-                                  firstDay: DateTime.now(),
-                                  lastDay: DateTime.now().add(const Duration(days: 365)),
-                                  focusedDay: _focusedDay,
-                                  calendarFormat: CalendarFormat.month,
-                                  headerStyle: const HeaderStyle(
-                                    formatButtonVisible: false,
-                                    titleCentered: true,
-                                    titleTextStyle: TextStyle(color: Colors.white, fontSize: 16),
-                                    leftChevronIcon: Icon(Icons.chevron_left, color: Colors.white),
-                                    rightChevronIcon: Icon(Icons.chevron_right, color: Colors.white),
+                : Column(
+                  children: [
+                  HeaderBar(),
+                  SingleChildScrollView(
+                      padding: const EdgeInsets.only(
+                          top: 80, left: 16, right: 16, bottom: 100),
+                      child: Row(
+                        crossAxisAlignment: CrossAxisAlignment.start,
+                        children: [
+                          Expanded(
+                            flex: 2,
+                            child: Column(
+                              children: [
+                                Container(
+                                  decoration: BoxDecoration(
+                                    color: Colors.grey[900],
+                                    borderRadius: BorderRadius.circular(16),
                                   ),
-                                  daysOfWeekStyle: const DaysOfWeekStyle(
-                                    weekdayStyle: TextStyle(color: Colors.white70),
-                                    weekendStyle: TextStyle(color: Colors.redAccent),
-                                  ),
-                                  calendarStyle: const CalendarStyle(
-                                    outsideDaysVisible: false,
-                                    weekendTextStyle: TextStyle(color: Colors.redAccent),
-                                    defaultTextStyle: TextStyle(color: Colors.white),
-                                    selectedDecoration: BoxDecoration(color: Colors.red, shape: BoxShape.circle),
-                                    todayDecoration: BoxDecoration(color: Color(0xFFFF9800), shape: BoxShape.circle),
-                                  ),
-                                  startingDayOfWeek: StartingDayOfWeek.monday,
-                                  selectedDayPredicate: (d) => isSameDay(_selectedDay, d),
-                                  onDaySelected: (s, f) => setState(() {
-                                    _selectedDay = s;
-                                    _focusedDay = f;
-                                  }),
-                                  onPageChanged: (f) => setState(() => _focusedDay = f),
-                                  eventLoader: _getEventsForDay,
-                                  calendarBuilders: CalendarBuilders(
-                                    markerBuilder: (c, day, ev) {
-                                      if (ev.isEmpty) return null;
-                                      return Row(
-                                        mainAxisAlignment: MainAxisAlignment.center,
-                                        children: ev.take(3).map((e) {
-                                          final req = e as Map<String, dynamic>;
-                                          final state = req['verlof_state'] as String?;
-                                          final approved = state == 'approved';
-                                          final denied = state == 'denied';
-                                          return Container(
-                                            margin: const EdgeInsets.symmetric(horizontal: 1),
-                                            width: 5,
-                                            height: 5,
-                                            decoration: BoxDecoration(
-                                              shape: BoxShape.circle,
-                                              color: approved
-                                                  ? Colors.green
-                                                  : denied
-                                                      ? Colors.red
-                                                      : Colors.orange,
-                                            ),
-                                          );
-                                        }).toList(),
-                                      );
-                                    },
-                                    defaultBuilder: (c, day, f) {
-                                      final ev = _getEventsForDay(day);
-                                      if (ev.isEmpty) return null;
-                                      return Tooltip(
-                                        message: ev
-                                            .map((e) {
-                                              final start = DateTime.tryParse(e['start'] ?? '')?.toLocal();
-                                              final end = DateTime.tryParse(e['end_time'] ?? '')?.toLocal();
-                                              final state = e['verlof_state'] as String?;
-                                              final status = state == 'approved'
-                                                  ? 'Approved'
-                                                  : state == 'denied'
-                                                      ? 'Denied'
-                                                      : 'Pending';
-                                              final title = _getDisplayTitle(e);
-                                              return '$title\n${start != null ? DateFormat('MMM dd').format(start) : ''} - ${end != null ? DateFormat('MMM dd').format(end) : ''}\nStatus: $status';
-                                            })
-                                            .join('\n\n'),
-                                        preferBelow: false,
-                                        decoration: BoxDecoration(
-                                          color: Colors.black87,
-                                          borderRadius: BorderRadius.circular(8),
-                                        ),
-                                        textStyle: const TextStyle(color: Colors.white, fontSize: 12),
-                                        child: Container(
-                                          margin: const EdgeInsets.all(6),
-                                          alignment: Alignment.center,
-                                          child: Text(
-                                            '${day.day}',
-                                            style: TextStyle(
-                                              color: day.weekday == DateTime.saturday ||
-                                                      day.weekday == DateTime.sunday
-                                                  ? Colors.redAccent
-                                                  : Colors.white,
-                                            ),
-                                          ),
-                                        ),
-                                      );
-                                    },
-                                  ),
-                                ),
-                              ),
-                              const SizedBox(height: 12),
-                              Container(
-                                padding: const EdgeInsets.symmetric(horizontal: 12, vertical: 8),
-                                decoration: BoxDecoration(
-                                  color: Colors.grey[850],
-                                  borderRadius: BorderRadius.circular(12),
-                                ),
-                                child: Text(
-                                  'Remaining Leave Days: $_remainingLeaveDays',
-                                  style: const TextStyle(
-                                    color: Colors.white,
-                                    fontSize: 14,
-                                    fontWeight: FontWeight.bold,
-                                  ),
-                                  textAlign: TextAlign.center,
-                                ),
-                              ),
-                              const SizedBox(height: 16),
-                              if (!_isOfficeManager)
-                              Container(
-                                width: double.infinity,
-                                padding: const EdgeInsets.all(20),
-                                decoration: BoxDecoration(
-                                  color: Colors.grey[850],
-                                  borderRadius: BorderRadius.circular(16),
-                                ),
-                                child: Column(
-                                  crossAxisAlignment: CrossAxisAlignment.start,
-                                  children: [
-                                    const Row(
-                                      children: [
-                                        Icon(Icons.sick, color: Colors.red, size: 28),
-                                        SizedBox(width: 12),
-                                        Text(
-                                          'Quick Sick',
-                                          style: TextStyle(
-                                            color: Colors.white,
-                                            fontSize: 20,
-                                            fontWeight: FontWeight.bold,
-                                          ),
-                                        ),
-                                      ],
+                                  padding: const EdgeInsets.all(12),
+                                  child: TableCalendar(
+                                    firstDay: DateTime.now(),
+                                    lastDay: DateTime.now().add(const Duration(days: 365)),
+                                    focusedDay: _focusedDay,
+                                    calendarFormat: CalendarFormat.month,
+                                    headerStyle: const HeaderStyle(
+                                      formatButtonVisible: false,
+                                      titleCentered: true,
+                                      titleTextStyle: TextStyle(color: Colors.white, fontSize: 16),
+                                      leftChevronIcon: Icon(Icons.chevron_left, color: Colors.white),
+                                      rightChevronIcon: Icon(Icons.chevron_right, color: Colors.white),
                                     ),
-                                    const SizedBox(height: 8),
-                                    const Text(
-                                      'Call in sick for today or pick another date',
-                                      style: TextStyle(color: Colors.white),
+                                    daysOfWeekStyle: const DaysOfWeekStyle(
+                                      weekdayStyle: TextStyle(color: Colors.white70),
+                                      weekendStyle: TextStyle(color: Colors.redAccent),
+                                    ),
+                                    calendarStyle: const CalendarStyle(
+                                      outsideDaysVisible: false,
+                                      weekendTextStyle: TextStyle(color: Colors.redAccent),
+                                      defaultTextStyle: TextStyle(color: Colors.white),
+                                      selectedDecoration: BoxDecoration(color: Colors.red, shape: BoxShape.circle),
+                                      todayDecoration: BoxDecoration(color: Color(0xFFFF9800), shape: BoxShape.circle),
+                                    ),
+                                    startingDayOfWeek: StartingDayOfWeek.monday,
+                                    selectedDayPredicate: (d) => isSameDay(_selectedDay, d),
+                                    onDaySelected: (s, f) => setState(() {
+                                      _selectedDay = s;
+                                      _focusedDay = f;
+                                    }),
+                                    onPageChanged: (f) => setState(() => _focusedDay = f),
+                                    eventLoader: _getEventsForDay,
+                                    calendarBuilders: CalendarBuilders(
+                                      markerBuilder: (c, day, ev) {
+                                        if (ev.isEmpty) return null;
+                                        return Row(
+                                          mainAxisAlignment: MainAxisAlignment.center,
+                                          children: ev.take(3).map((e) {
+                                            final req = e as Map<String, dynamic>;
+                                            final state = req['verlof_state'] as String?;
+                                            final approved = state == 'approved';
+                                            final denied = state == 'denied';
+                                            return Container(
+                                              margin: const EdgeInsets.symmetric(horizontal: 1),
+                                              width: 5,
+                                              height: 5,
+                                              decoration: BoxDecoration(
+                                                shape: BoxShape.circle,
+                                                color: approved
+                                                    ? Colors.green
+                                                    : denied
+                                                        ? Colors.red
+                                                        : Colors.orange,
+                                              ),
+                                            );
+                                          }).toList(),
+                                        );
+                                      },
+                                      defaultBuilder: (c, day, f) {
+                                        final ev = _getEventsForDay(day);
+                                        if (ev.isEmpty) return null;
+                                        return Tooltip(
+                                          message: ev
+                                              .map((e) {
+                                                final start = DateTime.tryParse(e['start'] ?? '')?.toLocal();
+                                                final end = DateTime.tryParse(e['end_time'] ?? '')?.toLocal();
+                                                final state = e['verlof_state'] as String?;
+                                                final status = state == 'approved'
+                                                    ? 'Approved'
+                                                    : state == 'denied'
+                                                        ? 'Denied'
+                                                        : 'Pending';
+                                                final title = _getDisplayTitle(e);
+                                                return '$title\n${start != null ? DateFormat('MMM dd').format(start) : ''} - ${end != null ? DateFormat('MMM dd').format(end) : ''}\nStatus: $status';
+                                              })
+                                              .join('\n\n'),
+                                          preferBelow: false,
+                                          decoration: BoxDecoration(
+                                            color: Colors.black87,
+                                            borderRadius: BorderRadius.circular(8),
+                                          ),
+                                          textStyle: const TextStyle(color: Colors.white, fontSize: 12),
+                                          child: Container(
+                                            margin: const EdgeInsets.all(6),
+                                            alignment: Alignment.center,
+                                            child: Text(
+                                              '${day.day}',
+                                              style: TextStyle(
+                                                color: day.weekday == DateTime.saturday ||
+                                                        day.weekday == DateTime.sunday
+                                                    ? Colors.redAccent
+                                                    : Colors.white,
+                                              ),
+                                            ),
+                                          ),
+                                        );
+                                      },
+                                    ),
+                                  ),
+                                ),
+                                const SizedBox(height: 12),
+                                Container(
+                                  padding: const EdgeInsets.symmetric(horizontal: 12, vertical: 8),
+                                  decoration: BoxDecoration(
+                                    color: Colors.grey[850],
+                                    borderRadius: BorderRadius.circular(12),
+                                  ),
+                                  child: Text(
+                                    'Remaining Leave Days: $_remainingLeaveDays',
+                                    style: const TextStyle(
+                                      color: Colors.white,
+                                      fontSize: 14,
+                                      fontWeight: FontWeight.bold,
+                                    ),
+                                    textAlign: TextAlign.center,
+                                  ),
+                                ),
+                                const SizedBox(height: 16),
+                                if (!_isOfficeManager)
+                                Container(
+                                  width: double.infinity,
+                                  padding: const EdgeInsets.all(20),
+                                  decoration: BoxDecoration(
+                                    color: Colors.grey[850],
+                                    borderRadius: BorderRadius.circular(16),
+                                  ),
+                                  child: Column(
+                                    crossAxisAlignment: CrossAxisAlignment.start,
+                                    children: [
+                                      const Row(
+                                        children: [
+                                          Icon(Icons.sick, color: Colors.red, size: 28),
+                                          SizedBox(width: 12),
+                                          Text(
+                                            'Quick Sick',
+                                            style: TextStyle(
+                                              color: Colors.white,
+                                              fontSize: 20,
+                                              fontWeight: FontWeight.bold,
+                                            ),
+                                          ),
+                                        ],
+                                      ),
+                                      const SizedBox(height: 8),
+                                      const Text(
+                                        'Call in sick for today or pick another date',
+                                        style: TextStyle(color: Colors.white),
+                                      ),
+                                      const SizedBox(height: 16),
+                                      SizedBox(
+                                        width: double.infinity,
+                                        child: ElevatedButton.icon(
+                                          onPressed: _isSubmittingQuickSick ? null : _submitQuickSick,
+                                          icon: _isSubmittingQuickSick
+                                              ? const SizedBox(width: 20, height: 20, child: CircularProgressIndicator(color: Colors.white, strokeWidth: 2))
+                                              : const Icon(Icons.sick, color: Colors.white),
+                                          label: Text(
+                                            _isSubmittingQuickSick ? 'Submitting...' : 'Call in Sick Today',
+                                            style: const TextStyle(fontSize: 17, fontWeight: FontWeight.bold, color: Colors.white),
+                                          ),
+                                          style: ElevatedButton.styleFrom(
+                                            backgroundColor: Colors.red,
+                                            foregroundColor: Colors.white,
+                                            padding: const EdgeInsets.symmetric(vertical: 18),
+                                            shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(14)),
+                                          ),
+                                        ),
+                                      ),
+                                    ],
+                                  ),
+                                ),
+                              ],
+                            ),
+                          ),
+                          const SizedBox(width: 16),
+                          Expanded(
+                            flex: 5,
+                            child: Container(
+                              decoration: BoxDecoration(
+                                color: Colors.white,
+                                borderRadius: BorderRadius.circular(24),
+                                boxShadow: [
+                                  BoxShadow(
+                                    color: Colors.black.withOpacity(0.05),
+                                    blurRadius: 10,
+                                    offset: const Offset(0, 4),
+                                  ),
+                                ],
+                              ),
+                              padding: const EdgeInsets.all(24),
+                              child: Column(
+                                crossAxisAlignment: CrossAxisAlignment.start,
+                                children: [
+                                  Row(
+                                    mainAxisAlignment: MainAxisAlignment.spaceBetween,
+                                    children: [
+                                      Text(
+                                        DateFormat('MMMM yyyy').format(_focusedDay),
+                                        style: const TextStyle(fontSize: 20, fontWeight: FontWeight.bold),
+                                      ),
+                                      ToggleButtons(
+                                        borderRadius: BorderRadius.circular(20),
+                                        selectedColor: Colors.white,
+                                        fillColor: Colors.grey[700],
+                                        color: Colors.grey[600],
+                                        constraints: const BoxConstraints(minHeight: 32, minWidth: 60),
+                                        isSelected: [
+                                          _calendarFormat == CalendarFormat.month,
+                                          _calendarFormat == CalendarFormat.week,
+                                        ],
+                                        onPressed: (i) => setState(() => _calendarFormat =
+                                            i == 0 ? CalendarFormat.month : CalendarFormat.week),
+                                        children: const [
+                                          Padding(padding: EdgeInsets.symmetric(horizontal: 12), child: Text('Month')),
+                                          Padding(padding: EdgeInsets.symmetric(horizontal: 12), child: Text('Week')),
+                                        ],
+                                      ),
+                                    ],
+                                  ),
+                                  const SizedBox(height: 12),
+                                  Row(
+                                    children: [
+                                      const Text('Work Week'),
+                                      Switch(
+                                        value: _showWorkWeek,
+                                        onChanged: (v) => setState(() => _showWorkWeek = v),
+                                        activeColor: Colors.red,
+                                      ),
+                                    ],
+                                  ),
+                                  const SizedBox(height: 16),
+                                  const Divider(height: 1, thickness: 1),
+                                  const SizedBox(height: 16),
+                                  TableCalendar(
+                                    firstDay: DateTime.now(),
+                                    lastDay: DateTime.now().add(const Duration(days: 365)),
+                                    focusedDay: _focusedDay,
+                                    calendarFormat: _calendarFormat,
+                                    startingDayOfWeek: StartingDayOfWeek.monday,
+                                    headerVisible: false,
+                                    selectedDayPredicate: (d) => isSameDay(_selectedDay, d),
+                                    onDaySelected: (s, f) => setState(() {
+                                      _selectedDay = s;
+                                      _focusedDay = f;
+                                    }),
+                                    onPageChanged: (f) => setState(() => _focusedDay = f),
+                                    eventLoader: _getEventsForDay,
+                                    enabledDayPredicate: _showWorkWeek
+                                        ? (d) => d.weekday != DateTime.saturday && d.weekday != DateTime.sunday
+                                        : null,
+                                    calendarStyle: CalendarStyle(
+                                      outsideDaysVisible: false,
+                                      weekendTextStyle: TextStyle(
+                                          color: _showWorkWeek ? Colors.grey[400] : Colors.red),
+                                      disabledTextStyle: TextStyle(color: Colors.grey[400]),
+                                    ),
+                                    calendarBuilders: CalendarBuilders(
+                                      markerBuilder: (c, day, ev) {
+                                        if (ev.isEmpty) return null;
+                                        return Row(
+                                          mainAxisAlignment: MainAxisAlignment.center,
+                                          children: ev.take(3).map((e) {
+                                            final req = e as Map<String, dynamic>;
+                                            final state = req['verlof_state'] as String?;
+                                            final approved = state == 'approved';
+                                            final denied = state == 'denied';
+                                            return Container(
+                                              margin: const EdgeInsets.symmetric(horizontal: 1),
+                                              width: 6,
+                                              height: 6,
+                                              decoration: BoxDecoration(
+                                                shape: BoxShape.circle,
+                                                color: approved
+                                                    ? Colors.green
+                                                    : denied
+                                                        ? Colors.red
+                                                        : Colors.orange,
+                                              ),
+                                            );
+                                          }).toList(),
+                                        );
+                                      },
+                                    ),
+                                  ),
+                                  const SizedBox(height: 32),
+                                  Text(
+                                    _isManager || _isOfficeManager ? 'Manager Requests' : 'New Leave Request',
+                                    style: const TextStyle(fontSize: 18, fontWeight: FontWeight.bold),
+                                  ),
+                                  const SizedBox(height: 16),
+
+                                  if (!_isOfficeManager) ...[
+                                    DropdownButtonFormField<String>(
+                                      value: _selectedVerlofType,
+                                      decoration: const InputDecoration(
+                                        labelText: 'Quick Type',
+                                        border: OutlineInputBorder(),
+                                      ),
+                                      hint: const Text('Select type (optional)'),
+                                      items: _verlofTypes.map((type) => DropdownMenuItem(
+                                        value: type,
+                                        child: Text(type[0].toUpperCase() + type.substring(1)),
+                                      )).toList(),
+                                      onChanged: (value) {
+                                        setState(() => _selectedVerlofType = value);
+                                        if (value != null && value != 'personal') {
+                                          _reasonController.text = value;
+                                        }
+                                      },
+                                    ),
+                                    const SizedBox(height: 12),
+                                    TextField(
+                                      key: const Key('reason_field'), // ← Added for E2E test
+                                      controller: _reasonController,
+                                      decoration: const InputDecoration(
+                                        labelText: 'Custom Reason',
+                                        hintText: 'e.g. Dentist, Wedding, etc. (optional if quick type selected)',
+                                        border: OutlineInputBorder(),
+                                      ),
+                                      maxLines: 3,
+                                    ),
+                                    const SizedBox(height: 12),
+                                    TextField(
+                                      key: const Key('start_date_field'), // ← Added for E2E test
+                                      controller: _startDateController,
+                                      decoration: const InputDecoration(
+                                        labelText: 'Start Date',
+                                        border: OutlineInputBorder(),
+                                        suffixIcon: Icon(Icons.calendar_today),
+                                      ),
+                                      readOnly: true,
+                                      onTap: () => _pickDate(_startDateController),
+                                    ),
+                                    const SizedBox(height: 12),
+                                    TextField(
+                                      key: const Key('end_date_field'), // ← Added for E2E test
+                                      controller: _endDateController,
+                                      decoration: const InputDecoration(
+                                        labelText: 'End Date',
+                                        border: OutlineInputBorder(),
+                                        suffixIcon: Icon(Icons.calendar_today),
+                                      ),
+                                      readOnly: true,
+                                      onTap: () => _pickDate(_endDateController),
                                     ),
                                     const SizedBox(height: 16),
                                     SizedBox(
                                       width: double.infinity,
-                                      child: ElevatedButton.icon(
-                                        onPressed: _isSubmittingQuickSick ? null : _submitQuickSick,
-                                        icon: _isSubmittingQuickSick
-                                            ? const SizedBox(width: 20, height: 20, child: CircularProgressIndicator(color: Colors.white, strokeWidth: 2))
-                                            : const Icon(Icons.sick, color: Colors.white),
-                                        label: Text(
-                                          _isSubmittingQuickSick ? 'Submitting...' : 'Call in Sick Today',
-                                          style: const TextStyle(fontSize: 17, fontWeight: FontWeight.bold, color: Colors.white),
-                                        ),
+                                      child: ElevatedButton(
+                                        key: const Key('submit_button'), // ← Added for E2E test
+                                        onPressed: _isSubmitting ? null : _submitRequest,
                                         style: ElevatedButton.styleFrom(
                                           backgroundColor: Colors.red,
-                                          foregroundColor: Colors.white,
-                                          padding: const EdgeInsets.symmetric(vertical: 18),
-                                          shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(14)),
+                                          padding: const EdgeInsets.symmetric(vertical: 16),
+                                          shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(12)),
                                         ),
+                                        child: _isSubmitting
+                                            ? const CircularProgressIndicator(color: Colors.white)
+                                            : const Text('Submit', style: TextStyle(fontSize: 16, color: Colors.white)),
                                       ),
                                     ),
+                                    const SizedBox(height: 32),
                                   ],
-                                ),
-                              ),
-                            ],
-                          ),
-                        ),
-                        const SizedBox(width: 16),
-                        Expanded(
-                          flex: 5,
-                          child: Container(
-                            decoration: BoxDecoration(
-                              color: Colors.white,
-                              borderRadius: BorderRadius.circular(24),
-                              boxShadow: [
-                                BoxShadow(
-                                  color: Colors.black.withOpacity(0.05),
-                                  blurRadius: 10,
-                                  offset: const Offset(0, 4),
-                                ),
-                              ],
-                            ),
-                            padding: const EdgeInsets.all(24),
-                            child: Column(
-                              crossAxisAlignment: CrossAxisAlignment.start,
-                              children: [
-                                Row(
-                                  mainAxisAlignment: MainAxisAlignment.spaceBetween,
-                                  children: [
-                                    Text(
-                                      DateFormat('MMMM yyyy').format(_focusedDay),
-                                      style: const TextStyle(fontSize: 20, fontWeight: FontWeight.bold),
-                                    ),
-                                    ToggleButtons(
-                                      borderRadius: BorderRadius.circular(20),
-                                      selectedColor: Colors.white,
-                                      fillColor: Colors.grey[700],
-                                      color: Colors.grey[600],
-                                      constraints: const BoxConstraints(minHeight: 32, minWidth: 60),
-                                      isSelected: [
-                                        _calendarFormat == CalendarFormat.month,
-                                        _calendarFormat == CalendarFormat.week,
-                                      ],
-                                      onPressed: (i) => setState(() => _calendarFormat =
-                                          i == 0 ? CalendarFormat.month : CalendarFormat.week),
-                                      children: const [
-                                        Padding(padding: EdgeInsets.symmetric(horizontal: 12), child: Text('Month')),
-                                        Padding(padding: EdgeInsets.symmetric(horizontal: 12), child: Text('Week')),
-                                      ],
-                                    ),
-                                  ],
-                                ),
-                                const SizedBox(height: 12),
-                                Row(
-                                  children: [
-                                    const Text('Work Week'),
-                                    Switch(
-                                      value: _showWorkWeek,
-                                      onChanged: (v) => setState(() => _showWorkWeek = v),
-                                      activeColor: Colors.red,
-                                    ),
-                                  ],
-                                ),
-                                const SizedBox(height: 16),
-                                const Divider(height: 1, thickness: 1),
-                                const SizedBox(height: 16),
-                                TableCalendar(
-                                  firstDay: DateTime.now(),
-                                  lastDay: DateTime.now().add(const Duration(days: 365)),
-                                  focusedDay: _focusedDay,
-                                  calendarFormat: _calendarFormat,
-                                  startingDayOfWeek: StartingDayOfWeek.monday,
-                                  headerVisible: false,
-                                  selectedDayPredicate: (d) => isSameDay(_selectedDay, d),
-                                  onDaySelected: (s, f) => setState(() {
-                                    _selectedDay = s;
-                                    _focusedDay = f;
-                                  }),
-                                  onPageChanged: (f) => setState(() => _focusedDay = f),
-                                  eventLoader: _getEventsForDay,
-                                  enabledDayPredicate: _showWorkWeek
-                                      ? (d) => d.weekday != DateTime.saturday && d.weekday != DateTime.sunday
-                                      : null,
-                                  calendarStyle: CalendarStyle(
-                                    outsideDaysVisible: false,
-                                    weekendTextStyle: TextStyle(
-                                        color: _showWorkWeek ? Colors.grey[400] : Colors.red),
-                                    disabledTextStyle: TextStyle(color: Colors.grey[400]),
+                                  Text(
+                                    _isManager ? 'Team Requests' : 'My Requests',
+                                    style: Theme.of(context).textTheme.titleLarge?.copyWith(fontWeight: FontWeight.bold),
                                   ),
-                                  calendarBuilders: CalendarBuilders(
-                                    markerBuilder: (c, day, ev) {
-                                      if (ev.isEmpty) return null;
-                                      return Row(
-                                        mainAxisAlignment: MainAxisAlignment.center,
-                                        children: ev.take(3).map((e) {
-                                          final req = e as Map<String, dynamic>;
-                                          final state = req['verlof_state'] as String?;
-                                          final approved = state == 'approved';
-                                          final denied = state == 'denied';
-                                          return Container(
-                                            margin: const EdgeInsets.symmetric(horizontal: 1),
-                                            width: 6,
-                                            height: 6,
+                                  const SizedBox(height: 12),
+                                  _requests.isEmpty
+                                  ? const Text('No requests yet.')
+                                  : Column(
+                                      children: [
+                                        // BULK ACTION BAR
+                                        if (_isManager && _isBulkMode && _selectedRequestIds.isNotEmpty)
+                                          Container(
+                                            padding: const EdgeInsets.all(12),
+                                            margin: const EdgeInsets.only(bottom: 12),
                                             decoration: BoxDecoration(
-                                              shape: BoxShape.circle,
-                                              color: approved
-                                                  ? Colors.green
-                                                  : denied
-                                                      ? Colors.red
-                                                      : Colors.orange,
+                                              color: Colors.blue.shade50,
+                                              borderRadius: BorderRadius.circular(12),
+                                              border: Border.all(color: Colors.blue),
                                             ),
-                                          );
-                                        }).toList(),
-                                      );
-                                    },
-                                  ),
-                                ),
-                                const SizedBox(height: 32),
-                                Text(
-                                  _isManager || _isOfficeManager ? 'Manager Requests' : 'New Leave Request',
-                                  style: const TextStyle(fontSize: 18, fontWeight: FontWeight.bold),
-                                ),
-                                const SizedBox(height: 16),
-
-                                if (!_isOfficeManager) ...[
-                                  DropdownButtonFormField<String>(
-                                    value: _selectedVerlofType,
-                                    decoration: const InputDecoration(
-                                      labelText: 'Quick Type',
-                                      border: OutlineInputBorder(),
-                                    ),
-                                    hint: const Text('Select type (optional)'),
-                                    items: _verlofTypes.map((type) => DropdownMenuItem(
-                                      value: type,
-                                      child: Text(type[0].toUpperCase() + type.substring(1)),
-                                    )).toList(),
-                                    onChanged: (value) {
-                                      setState(() => _selectedVerlofType = value);
-                                      if (value != null && value != 'personal') {
-                                        _reasonController.text = value;
-                                      }
-                                    },
-                                  ),
-                                  const SizedBox(height: 12),
-                                  TextField(
-                                    key: const Key('reason_field'), // ← Added for E2E test
-                                    controller: _reasonController,
-                                    decoration: const InputDecoration(
-                                      labelText: 'Custom Reason',
-                                      hintText: 'e.g. Dentist, Wedding, etc. (optional if quick type selected)',
-                                      border: OutlineInputBorder(),
-                                    ),
-                                    maxLines: 3,
-                                  ),
-                                  const SizedBox(height: 12),
-                                  TextField(
-                                    key: const Key('start_date_field'), // ← Added for E2E test
-                                    controller: _startDateController,
-                                    decoration: const InputDecoration(
-                                      labelText: 'Start Date',
-                                      border: OutlineInputBorder(),
-                                      suffixIcon: Icon(Icons.calendar_today),
-                                    ),
-                                    readOnly: true,
-                                    onTap: () => _pickDate(_startDateController),
-                                  ),
-                                  const SizedBox(height: 12),
-                                  TextField(
-                                    key: const Key('end_date_field'), // ← Added for E2E test
-                                    controller: _endDateController,
-                                    decoration: const InputDecoration(
-                                      labelText: 'End Date',
-                                      border: OutlineInputBorder(),
-                                      suffixIcon: Icon(Icons.calendar_today),
-                                    ),
-                                    readOnly: true,
-                                    onTap: () => _pickDate(_endDateController),
-                                  ),
-                                  const SizedBox(height: 16),
-                                  SizedBox(
-                                    width: double.infinity,
-                                    child: ElevatedButton(
-                                      key: const Key('submit_button'), // ← Added for E2E test
-                                      onPressed: _isSubmitting ? null : _submitRequest,
-                                      style: ElevatedButton.styleFrom(
-                                        backgroundColor: Colors.red,
-                                        padding: const EdgeInsets.symmetric(vertical: 16),
-                                        shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(12)),
-                                      ),
-                                      child: _isSubmitting
-                                          ? const CircularProgressIndicator(color: Colors.white)
-                                          : const Text('Submit', style: TextStyle(fontSize: 16, color: Colors.white)),
-                                    ),
-                                  ),
-                                  const SizedBox(height: 32),
-                                ],
-                                Text(
-                                  _isManager ? 'Team Requests' : 'My Requests',
-                                  style: Theme.of(context).textTheme.titleLarge?.copyWith(fontWeight: FontWeight.bold),
-                                ),
-                                const SizedBox(height: 12),
-                                _requests.isEmpty
-                                ? const Text('No requests yet.')
-                                : Column(
-                                    children: [
-                                      // BULK ACTION BAR
-                                      if (_isManager && _isBulkMode && _selectedRequestIds.isNotEmpty)
-                                        Container(
-                                          padding: const EdgeInsets.all(12),
-                                          margin: const EdgeInsets.only(bottom: 12),
-                                          decoration: BoxDecoration(
-                                            color: Colors.blue.shade50,
-                                            borderRadius: BorderRadius.circular(12),
-                                            border: Border.all(color: Colors.blue),
-                                          ),
-                                          child: Row(
-                                            children: [
-                                              Text('${_selectedRequestIds.length} selected', style: const TextStyle(fontWeight: FontWeight.bold)),
-                                              const Spacer(),
-                                              ElevatedButton.icon(
-                                                icon: const Icon(Icons.check, size: 18),
-                                                label: const Text('Approve All'),
-                                                style: ElevatedButton.styleFrom(
-                                                  backgroundColor: Colors.green,
-                                                  foregroundColor: Colors.white,
-                                                ),
-                                                onPressed: () => _bulkUpdateStatus('approve'),
-                                              ),
-                                              const SizedBox(width: 8),
-                                              ElevatedButton.icon(
-                                                icon: const Icon(Icons.close, size: 18),
-                                                label: const Text('Deny All'),
-                                                style: ElevatedButton.styleFrom(
-                                                  backgroundColor: Colors.red,
-                                                  foregroundColor: Colors.white,
-                                                ),
-                                                onPressed: () => _bulkUpdateStatus('deny'),
-                                              ),
-                                              const SizedBox(width: 8),
-                                              TextButton(
-                                                onPressed: () => setState(() {
-                                                  _selectedRequestIds.clear();
-                                                  _isBulkMode = false;
-                                                }),
-                                                child: const Text(
-                                                  'Cancel',
-                                                  style: TextStyle(color: Colors.black),
-                                                ),
-                                              ),
-                                            ],
-                                          ),
-                                        ),
-
-                                      // BULK MODE CONTROLS
-                                      if (_isManager)
-                                        Padding(
-                                          padding: const EdgeInsets.only(bottom: 8),
-                                          child: Wrap(
-                                            spacing: 8,
-                                            children: [
-                                              if (!_isBulkMode)
+                                            child: Row(
+                                              children: [
+                                                Text('${_selectedRequestIds.length} selected', style: const TextStyle(fontWeight: FontWeight.bold)),
+                                                const Spacer(),
                                                 ElevatedButton.icon(
-                                                  icon: const Icon(Icons.library_add_check_outlined),
-                                                  label: const Text('Bulk Actions'),
-                                                  onPressed: () => setState(() => _isBulkMode = true),
+                                                  icon: const Icon(Icons.check, size: 18),
+                                                  label: const Text('Approve All'),
+                                                  style: ElevatedButton.styleFrom(
+                                                    backgroundColor: Colors.green,
+                                                    foregroundColor: Colors.white,
+                                                  ),
+                                                  onPressed: () => _bulkUpdateStatus('approve'),
                                                 ),
-                                              if (_isBulkMode) ...[
+                                                const SizedBox(width: 8),
+                                                ElevatedButton.icon(
+                                                  icon: const Icon(Icons.close, size: 18),
+                                                  label: const Text('Deny All'),
+                                                  style: ElevatedButton.styleFrom(
+                                                    backgroundColor: Colors.red,
+                                                    foregroundColor: Colors.white,
+                                                  ),
+                                                  onPressed: () => _bulkUpdateStatus('deny'),
+                                                ),
+                                                const SizedBox(width: 8),
                                                 TextButton(
-                                                  onPressed: () {
-                                                    setState(() {
-                                                      _selectedRequestIds = _requests
-                                                          .where((r) => r['verlof_state'] != 'approved' && r['user_id'] != supabase.auth.currentUser?.id)
-                                                          .map((r) => r['id'] as int)
-                                                          .toSet();
-                                                    });
-                                                  },
-                                                  child: const Text('Select All Pending'),
+                                                  onPressed: () => setState(() {
+                                                    _selectedRequestIds.clear();
+                                                    _isBulkMode = false;
+                                                  }),
+                                                  child: const Text(
+                                                    'Cancel',
+                                                    style: TextStyle(color: Colors.black),
+                                                  ),
                                                 ),
-                                                TextButton(onPressed: () => setState(() => _selectedRequestIds.clear()), child: const Text('Clear')),
-                                                TextButton(onPressed: () => setState(() => _isBulkMode = false), child: const Text('Exit Bulk Mode')),
                                               ],
-                                            ],
-                                          ),
-                                        ),
-
-                                      // THE ACTUAL LIST WITH SELECTION
-                                      ListView.builder(
-                                        shrinkWrap: true,
-                                        physics: const NeverScrollableScrollPhysics(),
-                                        itemCount: _requests.length,
-                                        itemBuilder: (context, i) {
-                                          final req = _requests[i];
-                                          final id = req['id'] as int;
-                                          final state = req['verlof_state'] as String?;
-                                          final isOwn = req['user_id'] == supabase.auth.currentUser?.id;
-                                          final isSelected = _selectedRequestIds.contains(id);
-                                          final canSelect = (_isOfficeManager || _isManager) && !isOwn && state != 'approved';
-
-                                          return Card(
-                                            color: isSelected ? Colors.blue.shade50 : null,
-                                            child: ListTile(
-                                              onTap: _isBulkMode && canSelect
-                                                  ? () => setState(() => isSelected ? _selectedRequestIds.remove(id) : _selectedRequestIds.add(id))
-                                                  : null,
-                                              onLongPress: _isManager && !isOwn && !_isBulkMode ? () => setState(() => _isBulkMode = true) : null,
-                                              leading: _isBulkMode && canSelect
-                                                  ? Checkbox(
-                                                      value: isSelected,
-                                                      onChanged: (v) => setState(() => v == true ? _selectedRequestIds.add(id) : _selectedRequestIds.remove(id)),
-                                                    )
-                                                  : null,
-                                              title: Text(_getDisplayTitle(req)),
-                                              subtitle: Column(
-                                                crossAxisAlignment: CrossAxisAlignment.start,
-                                                children: [
-                                                  if (DateTime.tryParse(req['start'] ?? '') != null)
-                                                    Text('Start: ${DateFormat('yyyy-MM-dd').format(DateTime.parse(req['start']).toLocal())}'),
-                                                  if (DateTime.tryParse(req['end_time'] ?? '') != null)
-                                                    Text('End: ${DateFormat('yyyy-MM-dd').format(DateTime.parse(req['end_time']).toLocal())}'),
-                                                  Text('Status: ${state == 'approved' ? 'Approved' : state == 'denied' ? 'Denied' : 'Pending'}'),
-                                                  Text('Days: ${req['days_count']}'),
-                                                  if (_isManager) Text('User: ${req['user_id']}'),
-                                                ],
-                                              ),
-                                              trailing: Row(
-                                                mainAxisSize: MainAxisSize.min,
-                                                children: [
-                                                if ((_isOfficeManager || _isManager) && !isOwn && !_isBulkMode) ...[
-                                                      if (state != 'approved')
-                                                        IconButton(
-                                                          icon: const Icon(Icons.check, color: Colors.green),
-                                                          onPressed: () => _updateRequestStatus(id, 'approve'),
-                                                          tooltip: 'Approve',
-                                                        ),
-                                                      if (state != 'denied')
-                                                        IconButton(
-                                                          icon: const Icon(Icons.close, color: Colors.red),
-                                                          onPressed: () => _updateRequestStatus(id, 'deny'),
-                                                          tooltip: 'Deny',
-                                                        ),
-                                                    ],
-                                                    // Delete button – own requests OR any manager/office_manager can delete
-                                                    if (isOwn || _isOfficeManager || _isManager)
-                                                      IconButton(
-                                                        icon: const Icon(Icons.delete, color: Colors.red),
-                                                        onPressed: () => _deleteRequest(id),
-                                                        tooltip: 'Delete',
-                                                    ),
-                                                ],
-                                              ),
                                             ),
-                                          );
-                                        },
-                                      ),
-                                    ],
-                                  ),
-                              ],
+                                          ),
+
+                                        // BULK MODE CONTROLS
+                                        if (_isManager)
+                                          Padding(
+                                            padding: const EdgeInsets.only(bottom: 8),
+                                            child: Wrap(
+                                              spacing: 8,
+                                              children: [
+                                                if (!_isBulkMode)
+                                                  ElevatedButton.icon(
+                                                    icon: const Icon(Icons.library_add_check_outlined),
+                                                    label: const Text('Bulk Actions'),
+                                                    onPressed: () => setState(() => _isBulkMode = true),
+                                                  ),
+                                                if (_isBulkMode) ...[
+                                                  TextButton(
+                                                    onPressed: () {
+                                                      setState(() {
+                                                        _selectedRequestIds = _requests
+                                                            .where((r) => r['verlof_state'] != 'approved' && r['user_id'] != supabase.auth.currentUser?.id)
+                                                            .map((r) => r['id'] as int)
+                                                            .toSet();
+                                                      });
+                                                    },
+                                                    child: const Text('Select All Pending'),
+                                                  ),
+                                                  TextButton(onPressed: () => setState(() => _selectedRequestIds.clear()), child: const Text('Clear')),
+                                                  TextButton(onPressed: () => setState(() => _isBulkMode = false), child: const Text('Exit Bulk Mode')),
+                                                ],
+                                              ],
+                                            ),
+                                          ),
+
+                                        // THE ACTUAL LIST WITH SELECTION
+                                        ListView.builder(
+                                          shrinkWrap: true,
+                                          physics: const NeverScrollableScrollPhysics(),
+                                          itemCount: _requests.length,
+                                          itemBuilder: (context, i) {
+                                            final req = _requests[i];
+                                            final id = req['id'] as int;
+                                            final state = req['verlof_state'] as String?;
+                                            final isOwn = req['user_id'] == supabase.auth.currentUser?.id;
+                                            final isSelected = _selectedRequestIds.contains(id);
+                                            final canSelect = (_isOfficeManager || _isManager) && !isOwn && state != 'approved';
+
+                                            return Card(
+                                              color: isSelected ? Colors.blue.shade50 : null,
+                                              child: ListTile(
+                                                onTap: _isBulkMode && canSelect
+                                                    ? () => setState(() => isSelected ? _selectedRequestIds.remove(id) : _selectedRequestIds.add(id))
+                                                    : null,
+                                                onLongPress: _isManager && !isOwn && !_isBulkMode ? () => setState(() => _isBulkMode = true) : null,
+                                                leading: _isBulkMode && canSelect
+                                                    ? Checkbox(
+                                                        value: isSelected,
+                                                        onChanged: (v) => setState(() => v == true ? _selectedRequestIds.add(id) : _selectedRequestIds.remove(id)),
+                                                      )
+                                                    : null,
+                                                title: Text(_getDisplayTitle(req)),
+                                                subtitle: Column(
+                                                  crossAxisAlignment: CrossAxisAlignment.start,
+                                                  children: [
+                                                    if (DateTime.tryParse(req['start'] ?? '') != null)
+                                                      Text('Start: ${DateFormat('yyyy-MM-dd').format(DateTime.parse(req['start']).toLocal())}'),
+                                                    if (DateTime.tryParse(req['end_time'] ?? '') != null)
+                                                      Text('End: ${DateFormat('yyyy-MM-dd').format(DateTime.parse(req['end_time']).toLocal())}'),
+                                                    Text('Status: ${state == 'approved' ? 'Approved' : state == 'denied' ? 'Denied' : 'Pending'}'),
+                                                    Text('Days: ${req['days_count']}'),
+                                                    if (_isManager) Text('User: ${req['user_id']}'),
+                                                  ],
+                                                ),
+                                                trailing: Row(
+                                                  mainAxisSize: MainAxisSize.min,
+                                                  children: [
+                                                  if ((_isOfficeManager || _isManager) && !isOwn && !_isBulkMode) ...[
+                                                        if (state != 'approved')
+                                                          IconButton(
+                                                            icon: const Icon(Icons.check, color: Colors.green),
+                                                            onPressed: () => _updateRequestStatus(id, 'approve'),
+                                                            tooltip: 'Approve',
+                                                          ),
+                                                        if (state != 'denied')
+                                                          IconButton(
+                                                            icon: const Icon(Icons.close, color: Colors.red),
+                                                            onPressed: () => _updateRequestStatus(id, 'deny'),
+                                                            tooltip: 'Deny',
+                                                          ),
+                                                      ],
+                                                      // Delete button – own requests OR any manager/office_manager can delete
+                                                      if (isOwn || _isOfficeManager || _isManager)
+                                                        IconButton(
+                                                          icon: const Icon(Icons.delete, color: Colors.red),
+                                                          onPressed: () => _deleteRequest(id),
+                                                          tooltip: 'Delete',
+                                                      ),
+                                                  ],
+                                                ),
+                                              ),
+                                            );
+                                          },
+                                        ),
+                                      ],
+                                    ),
+                                ],
+                              ),
                             ),
                           ),
-                        ),
-                      ],
-                    ),
-                  ),
-            Positioned(
-              bottom: 24,
-              left: 0,
-              right: 0,
-              child: Center(child: Navbar()),
-            ),
-          ],
+                        ],
+                      ),
+                    )],
+                ),
+              Positioned(
+                bottom: 24,
+                left: 0,
+                right: 0,
+                child: Center(child: Navbar()),
+              ),
+            ],
         ),
       ),
     );
