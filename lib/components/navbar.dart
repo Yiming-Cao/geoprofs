@@ -16,6 +16,7 @@ class _NavbarState extends State<Navbar> {
   bool _isAdmin = false;
   bool _isOfficeManager = false;
   bool _hasNotifications = false;
+  Future<void>? _notificationTimer;
 
   @override
   void initState() {
@@ -23,11 +24,29 @@ class _NavbarState extends State<Navbar> {
     _checkAuthAndRole();
     _checkNotifications();
     
-    // Luister naar login/logout veranderingen
+    // 定期检查通知（每1秒）
+    Future.delayed(Duration.zero, () {
+      if (mounted) {
+        _notificationTimer = Future.doWhile(() async {
+          await Future.delayed(const Duration(seconds: 1));
+          if (mounted) {
+            await _checkNotifications();
+          }
+          return mounted;
+        });
+      }
+    });
+    
+    // 监听登录/登出变化
     supabase.auth.onAuthStateChange.listen((_) {
       _checkAuthAndRole();
       _checkNotifications();
     });
+  }
+
+  @override
+  void dispose() {
+    super.dispose();
   }
 
   Future<void> _checkAuthAndRole() async {
@@ -76,20 +95,24 @@ class _NavbarState extends State<Navbar> {
     }
 
     try {
-      // Query for leave requests for the current user that are not pending
-      dynamic builder = supabase.from('verlof').select();
-      builder = (builder as dynamic).eq('user_id', user.id).neq('status', 'pending').limit(1);
-      final response = await (builder as dynamic).execute();
+      // 查询当前用户的未确认通知（is_confirmed=false，且不是pending状态）
+      final response = await supabase
+          .from('verlof')
+          .select()
+          .eq('user_id', user.id)
+          .neq('verlof_state', 'pending')
+          .eq('is_confirmed', false)
+          .limit(1);
 
       bool has = false;
-      if (response != null) {
-        final data = response.data ?? response;
-        if (data is List && data.isNotEmpty) has = true;
+      if (response is List && response.isNotEmpty) {
+        has = true;
       }
 
       if (mounted) setState(() => _hasNotifications = has);
     } catch (e) {
-      // ignore errors, keep notifications false
+      debugPrint('Check notifications error: $e');
+      // 忽略错误，保持notifications为false
       if (mounted) setState(() => _hasNotifications = false);
     }
   }

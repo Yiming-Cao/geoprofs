@@ -1,5 +1,6 @@
 import 'package:flutter/material.dart';
 import 'package:supabase_flutter/supabase_flutter.dart';
+import 'package:intl/intl.dart';
 import 'package:geoprof/components/header_bar.dart';
 import 'package:geoprof/components/navbar.dart';
 import 'package:geoprof/components/background_container.dart';
@@ -46,24 +47,6 @@ class _DesktopLayoutState extends State<DesktopLayout> {
     _fetchNotifications();
   }
 
-  Future<dynamic> _runQuery(dynamic builder) async {
-    final b = builder as dynamic;
-    try {
-      return await b.execute();
-    } catch (_) {}
-    try {
-      return await b.get();
-    } catch (_) {}
-    try {
-      return await b.maybeSingle();
-    } catch (_) {}
-    try {
-      return await b.single();
-    } catch (_) {}
-    if (b is Future) return await b;
-    return b;
-  }
-
   Future<void> _fetchNotifications() async {
     setState(() => _loading = true);
     final user = supabase.auth.currentUser;
@@ -77,28 +60,31 @@ class _DesktopLayoutState extends State<DesktopLayout> {
     }
 
     try {
-      dynamic builder = supabase.from('verlof').select();
-      builder = (builder as dynamic).eq('user_id', userId).neq('status', 'pending').order('updated_at', const {'ascending': false});
+      final response = await supabase
+          .from('verlof')
+          .select()
+          .eq('user_id', userId)
+          .neq('verlof_state', 'pending')
+          .order('updated_at', ascending: false);
 
-      final response = await _runQuery(builder);
       List rows = [];
-      if (response == null) rows = [];
-      else if (response is List) rows = List.from(response);
-      else if (response is Map && response.containsKey('data')) {
-        final d = response['data'];
-        if (d is List) rows = List.from(d);
-      } else rows = [response];
+      if (response == null) {
+        rows = [];
+      } else if (response is List) {
+        rows = response;
+      }
 
       setState(() {
         _notifications = rows.map<Map<String, dynamic>>((r) {
           final m = Map<String, dynamic>.from(r as Map);
           return {
             'id': m['id'],
-            'start_date': m['start_date'] ?? m['start'] ?? '',
-            'end_date': m['end_date'] ?? m['end_time'] ?? '',
-            'status': m['status'] ?? '',
+            'start_date': m['start_date'] ?? '',
+            'end_date': m['end_date'] ?? '',
+            'status': m['verlof_state'] ?? '',
             'reason': m['reason'] ?? '',
-            'updated_at': m['updated_at'] ?? m['updated_at'],
+            'updated_at': m['updated_at'],
+            'is_confirmed': m['is_confirmed'] ?? false,
           };
         }).toList();
       });
@@ -107,6 +93,71 @@ class _DesktopLayoutState extends State<DesktopLayout> {
       setState(() => _notifications = []);
     } finally {
       if (mounted) setState(() => _loading = false);
+    }
+  }
+
+  String _formatDate(String dateString) {
+    if (dateString.isEmpty) return '';
+    try {
+      final date = DateTime.parse(dateString);
+      return DateFormat('dd/MM/yyyy').format(date);
+    } catch (_) {
+      return dateString;
+    }
+  }
+
+  Future<void> _markAsConfirmed(int id) async {
+    try {
+      await supabase.from('verlof').update({'is_confirmed': true}).eq('id', id);
+      if (mounted) {
+        ScaffoldMessenger.of(context).showSnackBar(
+          const SnackBar(content: Text('Confirmed'), duration: Duration(milliseconds: 500)),
+        );
+        await Future.delayed(const Duration(milliseconds: 300));
+        await _fetchNotifications();
+      }
+    } catch (e) {
+      debugPrint('Mark as confirmed failed: $e');
+      ScaffoldMessenger.of(context).showSnackBar(
+        const SnackBar(content: Text('Failed to mark as confirmed')),
+      );
+    }
+  }
+
+  Future<void> _deleteNotification(int id) async {
+    try {
+      await supabase.from('verlof').delete().eq('id', id);
+      if (mounted) {
+        ScaffoldMessenger.of(context).showSnackBar(
+          const SnackBar(content: Text('Deleted'), duration: Duration(milliseconds: 500)),
+        );
+        await Future.delayed(const Duration(milliseconds: 300));
+        await _fetchNotifications();
+      }
+    } catch (e) {
+      debugPrint('Delete notification failed: $e');
+      ScaffoldMessenger.of(context).showSnackBar(
+        const SnackBar(content: Text('Failed to delete notification')),
+      );
+    }
+  }
+
+  Future<void> _confirmAndDelete(int id) async {
+    try {
+      await supabase.from('verlof').update({'is_confirmed': true}).eq('id', id);
+      await supabase.from('verlof').delete().eq('id', id);
+      if (mounted) {
+        ScaffoldMessenger.of(context).showSnackBar(
+          const SnackBar(content: Text('Confirmed & Deleted'), duration: Duration(milliseconds: 500)),
+        );
+        await Future.delayed(const Duration(milliseconds: 300));
+        await _fetchNotifications();
+      }
+    } catch (e) {
+      debugPrint('Confirm and delete failed: $e');
+      ScaffoldMessenger.of(context).showSnackBar(
+        const SnackBar(content: Text('Failed to process notification')),
+      );
     }
   }
 
@@ -144,9 +195,12 @@ class _DesktopLayoutState extends State<DesktopLayout> {
                         Column(
                           children: _notifications.map((n) {
                             final status = (n['status'] ?? '').toString();
-                            final start = n['start_date']?.toString() ?? '';
-                            final end = n['end_date']?.toString() ?? '';
-                            final title = 'Your leave request from $start to $end was ${status.toUpperCase()}';
+                            final start = _formatDate(n['start_date']?.toString() ?? '');
+                            final end = _formatDate(n['end_date']?.toString() ?? '');
+                            final statusDisplay = status == 'approved' ? 'APPROVED' : status == 'denied' ? 'DENIED' : status.toUpperCase();
+                            final title = 'Your leave request from $start to $end was $statusDisplay';
+                            final notificationId = n['id'] as int;
+                            final isConfirmed = (n['is_confirmed'] as bool?) ?? false;
                             return Card(
                               margin: const EdgeInsets.symmetric(vertical: 8),
                               child: Padding(
@@ -159,11 +213,33 @@ class _DesktopLayoutState extends State<DesktopLayout> {
                                       const SizedBox(height: 8),
                                       Text(n['reason'].toString()),
                                     ],
-                                    const SizedBox(height: 8),
+                                    const SizedBox(height: 12),
                                     Row(
                                       mainAxisAlignment: MainAxisAlignment.end,
                                       children: [
-                                        TextButton(onPressed: () {}, child: const Text('Details')),
+                                        if (isConfirmed)
+                                          TextButton(
+                                            onPressed: null,
+                                            child: const Text('✓ Confirmed', style: TextStyle(color: Colors.green)),
+                                          )
+                                        else
+                                          TextButton(
+                                            onPressed: () => _markAsConfirmed(notificationId),
+                                            child: const Text('Confirm'),
+                                          ),
+                                        const SizedBox(width: 8),
+                                        TextButton(
+                                          onPressed: () => _deleteNotification(notificationId),
+                                          child: const Text('Delete', style: TextStyle(color: Colors.red)),
+                                        ),
+                                        const SizedBox(width: 8),
+                                        ElevatedButton(
+                                          onPressed: () => _confirmAndDelete(notificationId),
+                                          style: ElevatedButton.styleFrom(
+                                            backgroundColor: Colors.orange,
+                                          ),
+                                          child: const Text('Confirm & Delete', style: TextStyle(color: Colors.white, fontSize: 12)),
+                                        ),
                                       ],
                                     )
                                   ],
