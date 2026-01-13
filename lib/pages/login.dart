@@ -53,7 +53,7 @@ class _MobileLayoutState extends State<MobileLayout> {
       if (!success) {
         _error = "Invalid email or password";
       } else {
-        Navigator.pushReplacementNamed(context, '/dashboard');
+        Navigator.pushReplacementNamed(context, '/verlof');
       }
     });
   }
