@@ -8,6 +8,7 @@ import 'package:geoprof/pages/register.dart';
 import 'package:geoprof/pages/profile.dart';
 import 'package:geoprof/pages/verlof.dart';
 import 'package:geoprof/pages/team.dart';
+import 'package:geoprof/pages/manageteams.dart';
 
 Future<void> main() async {
   WidgetsFlutterBinding.ensureInitialized();
@@ -41,6 +42,7 @@ class MyApp extends StatelessWidget {
         '/profile': (context) => const ProfilePage(),
         '/verlof': (context) => const VerlofPage(),
         '/team': (context) => const TeamPage(),
+        '/manageteams': (context) => const TeamManagement(),
       },
     );
   }
