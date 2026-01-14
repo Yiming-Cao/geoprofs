@@ -14,6 +14,7 @@ class _NavbarState extends State<Navbar> {
 
   bool _isLoggedIn = false;
   bool _isAdmin = false;
+  bool _isManager = false;
   bool _isOfficeManager = false;
   bool _hasNotifications = false;
   Future<void>? _notificationTimer;
@@ -72,10 +73,12 @@ class _NavbarState extends State<Navbar> {
           .maybeSingle();
 
       final bool isAdmin = response != null && (response['role'] as String?) == 'admin';
+      final bool isManager = response != null && (response['role'] as String?) == 'manager';
       final bool isOfficeManager = response != null && (response['role'] as String?) == 'office_manager';
 
       if (mounted) {
         setState(() => _isAdmin = isAdmin);
+        setState(() => _isManager = isManager);
         setState(() => _isOfficeManager = isOfficeManager);
       }
     } catch (e) {
@@ -109,7 +112,27 @@ class _NavbarState extends State<Navbar> {
         has = true;
       }
 
-      if (mounted) setState(() => _hasNotifications = has);
+      // Additionally: if this user is a manager or office manager, check for pending team requests
+      bool managerHas = false;
+      try {
+        if (_isOfficeManager) {
+          final resp = await supabase
+              .rpc('get_verlof_for_managers_only', params: {'current_user_id': user.id});
+          if (resp is List && resp.isNotEmpty) managerHas = true;
+        } else if (_isManager) {
+          final resp = await supabase
+              .from('verlof')
+              .select('id')
+              .eq('verlof_state', 'pending')
+              .limit(1);
+          if (resp is List && resp.isNotEmpty) managerHas = true;
+        }
+      } catch (e) {
+        debugPrint('Check manager pending failed: $e');
+      }
+
+      final result = has || managerHas;
+      if (mounted) setState(() => _hasNotifications = result);
     } catch (e) {
       debugPrint('Check notifications error: $e');
       // 忽略错误，保持notifications为false

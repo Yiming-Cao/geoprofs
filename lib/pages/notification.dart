@@ -1,6 +1,7 @@
 import 'package:flutter/material.dart';
 import 'package:supabase_flutter/supabase_flutter.dart';
 import 'package:intl/intl.dart';
+import 'package:jwt_decode/jwt_decode.dart';
 import 'package:geoprof/components/header_bar.dart';
 import 'package:geoprof/components/navbar.dart';
 import 'package:geoprof/components/background_container.dart';
@@ -41,10 +42,17 @@ class _DesktopLayoutState extends State<DesktopLayout> {
   List<Map<String, dynamic>> _notifications = [];
   bool _loading = true;
 
+  // Manager/office manager notification state
+  bool _isManager = false;
+  bool _isOfficeManager = false;
+  int _pendingRequests = 0;
+  bool _loadingPending = false;
+
   @override
   void initState() {
     super.initState();
     _fetchNotifications();
+    _checkManagerPending();
   }
 
   Future<void> _fetchNotifications() async {
@@ -93,6 +101,65 @@ class _DesktopLayoutState extends State<DesktopLayout> {
       setState(() => _notifications = []);
     } finally {
       if (mounted) setState(() => _loading = false);
+    }
+  }
+
+  Future<void> _checkManagerPending() async {
+    setState(() => _loadingPending = true);
+    try {
+      final session = supabase.auth.currentSession;
+      bool isManager = false;
+      bool isOfficeManager = false;
+
+      if (session != null) {
+        final jwt = session.accessToken;
+        final payload = Jwt.parseJwt(jwt);
+        final roleFromJwt = payload['app_metadata']?['user_role'] as String? ??
+            payload['user_role'] as String?;
+        if (roleFromJwt != null) {
+          isManager = roleFromJwt == 'manager';
+          isOfficeManager = roleFromJwt == 'office_manager';
+        }
+      }
+
+      if (!isManager && !isOfficeManager) {
+        final userId = supabase.auth.currentUser?.id;
+        if (userId != null) {
+          final res = await supabase
+              .from('permissions')
+              .select('role')
+              .eq('user_uuid', userId)
+              .maybeSingle();
+          final roleFromDb = res?['role'] as String?;
+          isManager = roleFromDb == 'manager';
+          isOfficeManager = roleFromDb == 'office_manager';
+        }
+      }
+
+      int count = 0;
+      if (isOfficeManager) {
+        final response = await supabase
+            .rpc('get_verlof_for_managers_only', params: {'current_user_id': supabase.auth.currentUser?.id});
+        if (response is List) count = response.length;
+      } else if (isManager) {
+        final response = await supabase
+            .from('verlof')
+            .select('id')
+            .eq('verlof_state', 'pending');
+        if (response is List) count = response.length;
+      }
+
+      if (mounted) {
+        setState(() {
+          _isManager = isManager;
+          _isOfficeManager = isOfficeManager;
+          _pendingRequests = count;
+        });
+      }
+    } catch (e) {
+      debugPrint('Check manager pending failed: $e');
+    } finally {
+      if (mounted) setState(() => _loadingPending = false);
     }
   }
 
@@ -186,6 +253,53 @@ class _DesktopLayoutState extends State<DesktopLayout> {
                         ),
                         child: const Text('Notifications', style: TextStyle(fontWeight: FontWeight.bold, fontSize: 18)),
                       ),
+
+                      // Manager pending leave card
+                      if (_isManager)
+                        Card(
+                          margin: const EdgeInsets.only(bottom: 16),
+                          child: Padding(
+                            padding: const EdgeInsets.all(12.0),
+                            child: Row(
+                              children: [
+                                SizedBox(
+                                  width: 28,
+                                  height: 28,
+                                  child: Stack(
+                                    alignment: Alignment.center,
+                                    children: [
+                                      const Icon(Icons.notifications_active, color: Colors.orange),
+                                      if (_pendingRequests > 0)
+                                        Positioned(
+                                          right: 0,
+                                          top: 0,
+                                          child: Container(
+                                            width: 10,
+                                            height: 10,
+                                            decoration: const BoxDecoration(color: Colors.red, shape: BoxShape.circle),
+                                          ),
+                                        ),
+                                    ],
+                                  ),
+                                ),
+                                const SizedBox(width: 12),
+                                Expanded(
+                                  child: Text(
+                                    _pendingRequests > 0
+                                        ? 'You have $_pendingRequests pending leave request(s) to process.'
+                                        : 'No pending team leave requests.',
+                                    style: const TextStyle(fontSize: 16),
+                                  ),
+                                ),
+                                if (_pendingRequests > 0)
+                                  ElevatedButton(
+                                    onPressed: () => Navigator.pushNamed(context, '/verlof'),
+                                    child: const Text('Process'),
+                                  ),
+                              ],
+                            ),
+                          ),
+                        ),
 
                       if (_loading)
                         const Center(child: CircularProgressIndicator())
