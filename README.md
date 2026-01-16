@@ -2,15 +2,20 @@
 
 A new Flutter project.
 
-## Getting Started
+# information
 
-This project is a starting point for a Flutter application.
+For our testing we use the standard built in framework that flutter has for test files.
 
-A few resources to get you started if this is your first Flutter project:
+## How to setup the project
 
-- [Lab: Write your first Flutter app](https://docs.flutter.dev/get-started/codelab)
-- [Cookbook: Useful Flutter samples](https://docs.flutter.dev/cookbook)
+1st: run this command - installs all the packages needed to run flutter.
 
-For help getting started with Flutter development, view the
-[online documentation](https://docs.flutter.dev/), which offers tutorials,
-samples, guidance on mobile development, and a full API reference.
+```console
+flutter pub get
+```
+
+2nd: Run this command to start up our flutter project:
+
+```console
+flutter run
+```
