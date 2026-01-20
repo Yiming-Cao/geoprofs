@@ -43,6 +43,12 @@ void main() {
 
       expect(find.byKey(const Key('admin_page')), findsOneWidget, reason: 'Admin pagina niet geladen na login');
     }
+    testWidgets('Admin kan audit trail pagina openen', (WidgetTester tester) async {
+      await _loginAsAdmin(tester);
+
+      // 👇 hier komt je echte test
+      expect(find.text('Audit Trail'), findsOneWidget);
+    });
   }
   );
   }

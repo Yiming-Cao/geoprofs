@@ -114,7 +114,6 @@ class _AdminPageState extends State<AdminPage> {
 
     if (!_isAdmin) {
       return Scaffold(
-        key: const Key('admin_page'),
         body: Center(
           child: Column(
             mainAxisAlignment: MainAxisAlignment.center,
@@ -146,7 +145,9 @@ class _AdminPageState extends State<AdminPage> {
 }
 
 class AuditTrailPage extends StatefulWidget {
-  const AuditTrailPage({super.key});
+  final Future<List<Map<String, dynamic>>> Function()? fetchLogs;
+
+  const AuditTrailPage({super.key, this.fetchLogs});
 
   @override
   State<AuditTrailPage> createState() => _AuditTrailPageState();
@@ -180,7 +181,7 @@ Widget build(BuildContext context) {
     key: const Key('audit_trail_page'),
     appBar: AppBar(title: const Text("Logs")),
     body: FutureBuilder<List<Map<String, dynamic>>>(
-      future: getLogs(),
+      future: (widget.fetchLogs ?? getLogs)(),
       builder: (context, snapshot) {
         if (snapshot.connectionState == ConnectionState.waiting) {
           return const Center(child: CircularProgressIndicator());
@@ -290,6 +291,7 @@ class MobileLayout extends StatelessWidget {
   @override
   Widget build(BuildContext context) {
     return Scaffold(
+      key: const Key('admin_page'),
       appBar: AppBar(
         title: const Text('Admin Page - Mobile'),
       ),
@@ -321,8 +323,11 @@ class _DesktopLayoutState extends State<DesktopLayout> {
 
   @override
   Widget build(BuildContext context) {
+    
     Widget content;
+    
     switch (_selectedIndex) {
+      
       case 1:
         content = const AuditTrailPage();
         break;
@@ -336,6 +341,7 @@ class _DesktopLayoutState extends State<DesktopLayout> {
     }
 
     return Scaffold(
+       key: const Key('admin_page'),
       appBar: AppBar(
         title: const Text('Admin Page - Desktop'),
       ),
