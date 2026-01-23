@@ -6,14 +6,17 @@ import 'package:geoprof/components/navbar.dart';
 import 'package:geoprof/components/background_container.dart';
 import 'package:geoprof/components/header_bar.dart';
 import 'package:jwt_decode/jwt_decode.dart';
-import 'package:flutter/foundation.dart' show defaultTargetPlatform, TargetPlatform;
+import 'package:flutter/foundation.dart' show defaultTargetPlatform, TargetPlatform, kIsWeb;
 
 class VerlofPage extends StatelessWidget {
   const VerlofPage({super.key});
 
   @override
   Widget build(BuildContext context) {
-    if (defaultTargetPlatform == TargetPlatform.android ||
+    final width = MediaQuery.of(context).size.width;
+
+    if (kIsWeb && width < 768 ||
+        defaultTargetPlatform == TargetPlatform.android ||
         defaultTargetPlatform == TargetPlatform.iOS) {
       return const MobileLayout();
     }
@@ -544,7 +547,7 @@ class _MobileLayoutState extends State<MobileLayout> {
                       ? const Center(child: CircularProgressIndicator())
                       : SingleChildScrollView(
                           padding: const EdgeInsets.only(
-                              top: 0, left: 16, right: 16, bottom: 120),
+                              top: 8, left: 16, right: 16, bottom: 120),
                           child: Column(
                             crossAxisAlignment: CrossAxisAlignment.start,
                             children: [
@@ -810,7 +813,8 @@ class _MobileLayoutState extends State<MobileLayout> {
                                                     borderRadius: BorderRadius.circular(12),
                                                     border: Border.all(color: Colors.blue),
                                                   ),
-                                                  child: Row(
+                                                  child: Column(
+                                                    crossAxisAlignment: CrossAxisAlignment.start,
                                                     children: [
                                                       Text('${_selectedRequestIds.length} selected', style: const TextStyle(fontWeight: FontWeight.bold)),
                                                       const Spacer(),
@@ -1508,7 +1512,7 @@ class _DesktopLayoutState extends State<DesktopLayout> {
                   Expanded(
                     child: SingleChildScrollView(
                       padding: const EdgeInsets.only(
-                          top: 80, left: 16, right: 16, bottom: 100),
+                          top: 8, left: 16, right: 16, bottom: 80),
                       child: Row(
                         crossAxisAlignment: CrossAxisAlignment.start,
                         children: [
