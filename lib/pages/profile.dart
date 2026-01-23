@@ -9,7 +9,7 @@ import 'package:geoprof/components/header_bar.dart';
 import 'package:geoprof/components/background_container.dart';
 import 'package:image_picker/image_picker.dart';
 
-enum _Section { home, work, leave, messages }
+enum _Section { home, team, leave, messages }
 
 class ProfilePage extends StatelessWidget {
   const ProfilePage({super.key});
@@ -41,51 +41,273 @@ class _MobileLayoutState extends State<MobileLayout> {
 
   _Section _selectedSection = _Section.home;
 
-  List<Map<String, dynamic>> _tasks = [];
-  bool _loadingTasks = false;
-
   List<Map<String, dynamic>> _leaveRequests = [];
   bool _loadingLeave = false;
   bool _loadingRole = true;
   String _userRole = 'worker';
+  
+  String? _userDepartment;
+  bool _loadingDepartmentLeave = false;
+  List<Map<String, dynamic>> _departmentLeaveSchedule = [];
+  String? _userTeamId;
+
   @override
   void initState() {
     super.initState();
     final user = supabase.auth.currentUser;
     _avatarUrl = user?.userMetadata?['avatar_url'] as String?;
-    _loadTasks();
     _loadLeaveRequests();
     _loadUserRole();
-    _loadTasks();
-    _loadLeaveRequests();
+    _loadUserTeam();
   }
 
   Future<void> _loadUserRole() async {
-  final user = supabase.auth.currentUser;
-  if (user == null) {
-    setState(() => _loadingRole = false);
-    return;
+    final user = supabase.auth.currentUser;
+    if (user == null) {
+      if (mounted) setState(() => _loadingRole = false);
+      return;
+    }
+
+    try {
+      final response = await supabase
+          .from('permissions')
+          .select('role')
+          .eq('id', user.id)
+          .single();
+
+      if (mounted) setState(() {
+        _userRole = (response['role'] as String?)?.toLowerCase() ?? 'worker';
+        _loadingRole = false;
+      });
+    } catch (e) {
+      debugPrint('Kon rol niet ophalen: $e');
+      if (mounted) setState(() {
+        _userRole = 'worker';
+        _loadingRole = false;
+      });
+    }
   }
 
-  try {
-    final response = await supabase
-        .from('permissions')
-        .select('role')
-        .eq('id', user.id)
-        .single();
+  Future<void> _loadUserTeam() async {
+    final user = supabase.auth.currentUser;
+    if (user == null) return;
 
-    setState(() {
-      _userRole = (response['role'] as String?)?.toLowerCase() ?? 'worker';
-      _loadingRole = false;
-    });
-  } catch (e) {
-    debugPrint('Kon rol niet ophalen: $e');
-    setState(() {
-      _userRole = 'worker';
-      _loadingRole = false;
-    });
+    try {
+      // Try to find team where user is manager
+      var teamRes = await _runQuery(
+        supabase
+            .from('teams')
+            .select('id,name')
+            .eq('manager_id', user.id),
+      );
+
+      List teamList = [];
+      if (teamRes is List) {
+        teamList = teamRes;
+      } else if (teamRes is Map && teamRes.containsKey('data')) {
+        teamList = (teamRes['data'] ?? []) as List;
+      }
+
+      // If user is a manager with a team
+      if (teamList.isNotEmpty) {
+        final team = teamList.first as Map;
+        if (mounted) {
+          setState(() {
+            _userTeamId = team['id'].toString();
+            _userDepartment = team['name']?.toString();
+          });
+        }
+      } else {
+        // Try to find team where user is a member via team_members field
+        var allTeams = await _runQuery(
+          supabase.from('teams').select('id,name,team_members'),
+        );
+
+        List allTeamsList = [];
+        if (allTeams is List) {
+          allTeamsList = allTeams;
+        } else if (allTeams is Map && allTeams.containsKey('data')) {
+          allTeamsList = (allTeams['data'] ?? []) as List;
+        }
+
+        // Find team containing current user
+        for (var t in allTeamsList) {
+          final team = t as Map;
+          final members = team['team_members'];
+          List<String> memberIds = [];
+          
+          if (members is List) {
+            memberIds = members.map((m) => m.toString()).toList();
+          } else if (members is String) {
+            try {
+              final parsed = jsonDecode(members);
+              if (parsed is List) {
+                memberIds = parsed.map((m) => m.toString()).toList();
+              }
+            } catch (_) {}
+          }
+          
+          if (memberIds.contains(user.id)) {
+            if (mounted) {
+              setState(() {
+                _userTeamId = team['id'].toString();
+                _userDepartment = team['name']?.toString();
+              });
+            }
+            break;
+          }
+        }
+      }
+
+      if (_userTeamId != null && _userDepartment != null && _userDepartment!.isNotEmpty) {
+        await _loadDepartmentLeaveSchedule();
+      }
+    } catch (e) {
+      debugPrint('Kon team niet ophalen: $e');
+    }
   }
-}
+
+  Future<void> _loadDepartmentLeaveSchedule() async {
+    if (_userTeamId == null || _userTeamId!.isEmpty) return;
+
+    setState(() => _loadingDepartmentLeave = true);
+    try {
+      // 1. Get team and its members
+      final teamRes = await _runQuery(
+        supabase
+            .from('teams')
+            .select('id,name,team_members,manager_id')
+            .eq('id', _userTeamId!),
+      );
+
+      Map teamData = teamRes is Map ? teamRes : {};
+      List<String> departmentUserIds = [];
+      
+      // Extract team members from team_members field
+      final members = teamData['team_members'];
+      if (members is List) {
+        departmentUserIds = members.map((m) => m.toString()).toList();
+      } else if (members is String) {
+        try {
+          final parsed = jsonDecode(members);
+          if (parsed is List) {
+            departmentUserIds = parsed.map((m) => m.toString()).toList();
+          }
+        } catch (_) {}
+      }
+      
+      // Add manager_id if present
+      final managerId = teamData['manager_id']?.toString();
+      if (managerId != null && !departmentUserIds.contains(managerId)) {
+        departmentUserIds.add(managerId);
+      }
+
+      if (departmentUserIds.isEmpty) {
+        setState(() {
+          _departmentLeaveSchedule = [];
+          _loadingDepartmentLeave = false;
+        });
+        return;
+      }
+
+      // 2. Get profiles for these members
+      final profilesRes = await _runQuery(
+        supabase
+            .from('profiles')
+            .select('id,display_name')
+            .inFilter('id', departmentUserIds),
+      );
+
+      List<String> teamMemberIds = [];
+      if (profilesRes is List) {
+        teamMemberIds = (profilesRes as List)
+            .map((p) => (p as Map)['id'].toString())
+            .toList();
+      } else if (profilesRes is Map && profilesRes.containsKey('data')) {
+        teamMemberIds = ((profilesRes['data'] ?? []) as List)
+            .map((p) => (p as Map)['id'].toString())
+            .toList();
+      }
+
+      if (teamMemberIds.isEmpty) {
+        setState(() {
+          _departmentLeaveSchedule = [];
+          _loadingDepartmentLeave = false;
+        });
+        return;
+      }
+
+      // 3. Get all leave requests for team members
+      final leaveRes = await _runQuery(
+        supabase
+            .from('verlof')
+            .select()
+            .inFilter('user_id', teamMemberIds),
+      );
+
+      List<Map<String, dynamic>> leaveRequests = [];
+      if (leaveRes is List) {
+        leaveRequests = (leaveRes as List)
+            .map((e) => Map<String, dynamic>.from(e as Map))
+            .toList();
+      } else if (leaveRes is Map && leaveRes.containsKey('data')) {
+        leaveRequests = ((leaveRes['data'] ?? []) as List)
+            .map((e) => Map<String, dynamic>.from(e as Map))
+            .toList();
+      }
+
+      // 3. Build name map from profiles
+      Map<String, String> userNames = {};
+      if (profilesRes is List) {
+        for (var p in profilesRes) {
+          final pm = p as Map;
+          userNames[pm['id'].toString()] = pm['display_name']?.toString() ?? pm['id'].toString();
+        }
+      } else if (profilesRes is Map && profilesRes.containsKey('data')) {
+        for (var p in (profilesRes['data'] ?? []) as List) {
+          final pm = p as Map;
+          userNames[pm['id'].toString()] = pm['display_name']?.toString() ?? pm['id'].toString();
+        }
+      }
+
+      // 4. Normalize leave data
+      _departmentLeaveSchedule = leaveRequests.map((leave) {
+        final uid = leave['user_id']?.toString() ?? '';
+        leave['start_date'] = leave['start']?.toString() ?? leave['start_date']?.toString() ?? '';
+        leave['end_date'] = leave['end_time']?.toString() ?? leave['end_date']?.toString() ?? '';
+        leave['days'] = leave['days_count'] ?? leave['days'] ?? 0;
+        leave['applicant'] = userNames[uid] ?? uid;
+        
+        if (leave.containsKey('approved')) {
+          leave['status'] = leave['approved'] == true ? 'approved' : 'pending';
+        } else {
+          leave['status'] = leave['status'] ?? 'pending';
+        }
+        
+        return leave;
+      }).toList();
+
+      // Sort by start date
+      _departmentLeaveSchedule.sort((a, b) {
+        final dateA = DateTime.tryParse(a['start_date'] ?? '');
+        final dateB = DateTime.tryParse(b['start_date'] ?? '');
+        if (dateA == null || dateB == null) return 0;
+        return dateA.compareTo(dateB);
+      });
+
+      if (mounted) {
+        setState(() => _loadingDepartmentLeave = false);
+      }
+    } catch (e, st) {
+      debugPrint('Load department leave schedule failed: $e\n$st');
+      if (mounted) {
+        setState(() {
+          _departmentLeaveSchedule = [];
+          _loadingDepartmentLeave = false;
+        });
+      }
+    }
+  }
 
   // === 兼容不同版本的 Supabase 查询 ===
   Future<dynamic> _runQuery(dynamic builder) async {
@@ -104,103 +326,6 @@ class _MobileLayoutState extends State<MobileLayout> {
     } catch (_) {}
     if (b is Future) return await b;
     return b;
-  }
-
-  // === 加载任务 ===
-  Future<void> _loadTasks() async {
-    setState(() => _loadingTasks = true);
-    try {
-      final builder = supabase.from('tasks').select();
-      final response = await _runQuery(builder);
-      List data = [];
-
-      if (response != null && (response.error == null)) {
-        final d = response.data ?? response;
-        if (d is List) data = List.from(d);
-        else if (d != null) data = [d];
-      }
-
-      if (data.isNotEmpty) {
-        _tasks = data.map<Map<String, dynamic>>((e) {
-          final map = Map<String, dynamic>.from(e as Map);
-          final rawMembers = map['members'];
-          List<Map<String, dynamic>> members = [];
-          if (rawMembers is String) {
-            try {
-              final parsed = jsonDecode(rawMembers);
-              if (parsed is List) {
-                members = parsed.map<Map<String, dynamic>>((m) => Map<String, dynamic>.from(m as Map)).toList();
-              }
-            } catch (_) {}
-          } else if (rawMembers is List) {
-            members = rawMembers.map<Map<String, dynamic>>((m) {
-              if (m is Map) return Map<String, dynamic>.from(m);
-              return {'display_name': m.toString()};
-            }).toList();
-          }
-          map['members'] = members;
-          return map;
-        }).toList();
-      } else {
-        final currentName = supabase.auth.currentUser?.userMetadata?['display_name'] ?? 'You';
-        _tasks = [
-          {
-            'id': 1,
-            'title': 'Inspect site A',
-            'description': 'Check soil samples and equipment.',
-            'members': [
-              {'display_name': currentName, 'status': 'online', 'days_absent': 0}
-            ],
-            'completed': false,
-          },
-          {
-            'id': 2,
-            'title': 'Prepare report for B',
-            'description': 'Compile weekly report with Rens.',
-            'members': [
-              {'display_name': currentName, 'status': 'online', 'days_absent': 0},
-              {'display_name': 'Rens', 'status': 'ziek', 'days_absent': 2}
-            ],
-            'completed': false,
-          },
-          {
-            'id': 3,
-            'title': 'Survey C alone',
-            'description': 'Solo survey and photo documentation.',
-            'members': [
-              {'display_name': currentName, 'status': 'online', 'days_absent': 0}
-            ],
-            'completed': false,
-          },
-        ];
-      }
-    } catch (e, st) {
-      debugPrint('Load tasks failed: $e\n$st');
-    } finally {
-      setState(() => _loadingTasks = false);
-    }
-  }
-
-  // === 切换任务完成状态 ===
-  Future<void> _toggleTaskComplete(Map<String, dynamic> task) async {
-    final id = task['id'];
-    final newVal = !(task['completed'] == true);
-    setState(() {
-      final idx = _tasks.indexWhere((t) => t['id'] == id);
-      if (idx != -1) _tasks[idx]['completed'] = newVal;
-    });
-
-    try {
-      final builder = supabase.from('tasks').update({'completed': newVal}).eq('id', id);
-      final res = await _runQuery(builder);
-      if (res != null && res.error != null) throw res.error!;
-    } catch (e, st) {
-      debugPrint('Toggle task failed: $e\n$st');
-      setState(() {
-        final idx = _tasks.indexWhere((t) => t['id'] == id);
-        if (idx != -1) _tasks[idx]['completed'] = !newVal;
-      });
-    }
   }
 
   // === 加载请假请求 ===
@@ -305,8 +430,8 @@ class _MobileLayoutState extends State<MobileLayout> {
 
   // === 侧边栏点击 ===
   void _onSidebarTap(String label) {
-    if (label == 'Work') {
-      setState(() => _selectedSection = _Section.work);
+    if (label == 'Team') {
+      setState(() => _selectedSection = _Section.team);
     } else if (label == 'Home') {
       setState(() => _selectedSection = _Section.home);
     } else if (label == 'Messages') {
@@ -427,95 +552,109 @@ class _MobileLayoutState extends State<MobileLayout> {
 
   // === 内容区域 ===
   Widget _buildContent() {
-    if (_selectedSection == _Section.work) {
-      if (_loadingTasks) return const Center(child: CircularProgressIndicator());
+    if (_selectedSection == _Section.team) {
+      if (_loadingDepartmentLeave) return const Center(child: CircularProgressIndicator());
+      if (_departmentLeaveSchedule.isEmpty) {
+        return const Center(
+          child: Text(
+            'Geen afdelingsverlofschema beschikbaar.',
+            style: TextStyle(color: Colors.black54),
+          ),
+        );
+      }
       return SingleChildScrollView(
         padding: const EdgeInsets.all(12),
-        child: Wrap(
-          spacing: 12,
-          runSpacing: 12,
-          children: _tasks.map((task) {
-            final members = List<Map<String, dynamic>>.from(task['members'] ?? []);
-            final completed = task['completed'] == true;
-            return SizedBox(
-              width: 360,
-              child: Card(
-                elevation: 4,
-                shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(10)),
-                child: Padding(
-                  padding: const EdgeInsets.all(12.0),
-                  child: Column(
-                    crossAxisAlignment: CrossAxisAlignment.start,
-                    children: [
-                      Row(
-                        children: [
-                          Expanded(
-                            child: Text(task['title'] ?? 'No title',
-                                style: const TextStyle(fontSize: 18, fontWeight: FontWeight.bold)),
-                          ),
-                          Checkbox(
-                            value: completed,
-                            onChanged: (_) => _toggleTaskComplete(task),
-                          ),
-                        ],
-                      ),
-                      const SizedBox(height: 6),
-                      Text(task['description'] ?? '', style: const TextStyle(color: Colors.black87)),
-                      const SizedBox(height: 12),
-                      const Text('Members', style: TextStyle(fontWeight: FontWeight.bold)),
-                      const SizedBox(height: 8),
-                      Column(
-                        children: members.map((m) {
-                          final status = (m['status'] ?? '').toString();
-                          final days = m['days_absent'] ?? 0;
-                          final name = m['display_name'] ?? 'Unknown';
-                          Color badgeColor;
-                          String badgeText;
-                          if (status == 'online') {
-                            badgeColor = Colors.green;
-                            badgeText = 'Online';
-                          } else if (status == 'ziek') {
-                            badgeColor = Colors.red;
-                            badgeText = 'Ziek ($days d)';
-                          } else if (status == 'vakantie') {
-                            badgeColor = Colors.orange;
-                            badgeText = 'Vakantie';
-                          } else if (status == 'personel verlof') {
-                            badgeColor = Colors.purple;
-                            badgeText = 'Pers. verlof';
-                          } else {
-                            badgeColor = Colors.grey;
-                            badgeText = status;
-                          }
-                          return ListTile(
-                            dense: true,
-                            contentPadding: EdgeInsets.zero,
-                            leading: CircleAvatar(child: Text(name.isNotEmpty ? name[0] : '?')),
-                            title: Text(name),
-                            trailing: Container(
-                              padding: const EdgeInsets.symmetric(horizontal: 8, vertical: 4),
-                              decoration: BoxDecoration(color: badgeColor.withOpacity(0.15), borderRadius: BorderRadius.circular(8)),
-                              child: Text(badgeText, style: TextStyle(color: badgeColor, fontSize: 12)),
-                            ),
-                          );
-                        }).toList(),
-                      ),
-                      const SizedBox(height: 8),
-                      Row(
-                        mainAxisAlignment: MainAxisAlignment.end,
-                        children: [
-                          TextButton(
-                            onPressed: () => _toggleTaskComplete(task),
-                            child: Text(completed ? 'Mark Incomplete' : 'Confirm Done'),
-                          )
-                        ],
-                      )
-                    ],
-                  ),
-                ),
+        child: Column(
+          crossAxisAlignment: CrossAxisAlignment.start,
+          children: [
+            Padding(
+              padding: const EdgeInsets.only(bottom: 16),
+              child: Text(
+                'Verlofschema: $_userDepartment',
+                style: const TextStyle(fontSize: 18, fontWeight: FontWeight.bold),
               ),
-            );
-          }).toList(),
+            ),
+            Column(
+              children: _departmentLeaveSchedule.map((leave) {
+                final start = DateTime.tryParse(leave['start_date'] ?? '');
+                final end = DateTime.tryParse(leave['end_date'] ?? '');
+                final days = leave['days'] ?? (start != null && end != null ? end.difference(start).inDays + 1 : 0);
+                final status = (leave['status'] ?? 'pending').toString();
+                final applicant = leave['applicant'] ?? 'Onbekend';
+
+                Color statusColor = Colors.orange;
+                if (status == 'approved') statusColor = Colors.green;
+                if (status == 'rejected') statusColor = Colors.red;
+
+                return Card(
+                  margin: const EdgeInsets.symmetric(vertical: 8),
+                  child: Padding(
+                    padding: const EdgeInsets.all(12.0),
+                    child: Column(
+                      crossAxisAlignment: CrossAxisAlignment.start,
+                      children: [
+                        Row(
+                          children: [
+                            Expanded(
+                              child: Text(
+                                applicant,
+                                style: const TextStyle(fontWeight: FontWeight.bold, fontSize: 16),
+                              ),
+                            ),
+                            Container(
+                              padding: const EdgeInsets.symmetric(horizontal: 8, vertical: 4),
+                              decoration: BoxDecoration(
+                                color: statusColor.withOpacity(0.15),
+                                borderRadius: BorderRadius.circular(8),
+                              ),
+                              child: Text(
+                                status.toUpperCase(),
+                                style: TextStyle(color: statusColor, fontSize: 12, fontWeight: FontWeight.w600),
+                              ),
+                            ),
+                          ],
+                        ),
+                        const SizedBox(height: 8),
+                        Row(
+                          children: [
+                            Expanded(
+                              child: Column(
+                                crossAxisAlignment: CrossAxisAlignment.start,
+                                children: [
+                                  Text(
+                                    'Van: ${start != null ? start.toLocal().toString().split(' ')[0] : leave['start_date']}',
+                                    style: const TextStyle(color: Colors.black87),
+                                  ),
+                                  Text(
+                                    'Tot: ${end != null ? end.toLocal().toString().split(' ')[0] : leave['end_date']}',
+                                    style: const TextStyle(color: Colors.black87),
+                                  ),
+                                ],
+                              ),
+                            ),
+                            Container(
+                              padding: const EdgeInsets.all(8),
+                              decoration: BoxDecoration(
+                                color: Colors.blue.withOpacity(0.1),
+                                borderRadius: BorderRadius.circular(8),
+                              ),
+                              child: Text(
+                                '$days dag${days != 1 ? 'en' : ''}',
+                                style: const TextStyle(
+                                  fontWeight: FontWeight.bold,
+                                  color: Colors.blue,
+                                ),
+                              ),
+                            ),
+                          ],
+                        ),
+                      ],
+                    ),
+                  ),
+                );
+              }).toList(),
+            ),
+          ],
         ),
       );
     }
@@ -681,7 +820,7 @@ class _MobileLayoutState extends State<MobileLayout> {
                           child: Column(
                             children: [
                               _SidebarItem(icon: Icons.home, label: 'Home', onTap: () => _onSidebarTap('Home')),
-                              _SidebarItem(icon: Icons.folder, label: 'Work', onTap: () => _onSidebarTap('Work')),
+                              _SidebarItem(icon: Icons.folder, label: 'Team', onTap: () => _onSidebarTap('Team')),
                               _SidebarItem(icon: Icons.message, label: 'Messages', onTap: () => _onSidebarTap('Messages')),
                               _SidebarItem(icon: Icons.beach_access, label: 'Leave', onTap: () => _onSidebarTap('Leave')),
                             ],
@@ -744,29 +883,31 @@ class _DesktopLayoutState extends State<DesktopLayout> {
 
   _Section _selectedSection = _Section.home;
 
-  List<Map<String, dynamic>> _tasks = [];
-  bool _loadingTasks = false;
-
   List<Map<String, dynamic>> _leaveRequests = [];
   bool _loadingLeave = false;
 
   bool _loadingRole = true;
   String _userRole = 'worker';
 
+  String? _userDepartment;
+  bool _loadingDepartmentLeave = false;
+  List<Map<String, dynamic>> _departmentLeaveSchedule = [];
+  String? _userTeamId;
+
   @override
   void initState() {
     super.initState();
     final user = supabase.auth.currentUser;
     _avatarUrl = user?.userMetadata?['avatar_url'] as String?;
-    _loadTasks();
     _loadLeaveRequests(); 
     _loadUserRole();
+    _loadUserTeam();
   }
 
   Future<void> _loadUserRole() async {
   final user = supabase.auth.currentUser;
   if (user == null) {
-    setState(() => _loadingRole = false);
+    if (mounted) setState(() => _loadingRole = false);
     return;
   }
 
@@ -777,16 +918,300 @@ class _DesktopLayoutState extends State<DesktopLayout> {
         .eq('user_uuid', user.id)
         .single();
 
-    setState(() {
+    if (mounted) setState(() {
       _userRole = (response['role'] as String?)?.toLowerCase() ?? 'worker';
       _loadingRole = false;
     });
   } catch (e) {
     debugPrint('Kon rol niet ophalen: $e');
-    setState(() {
+    if (mounted) setState(() {
       _userRole = 'worker';
       _loadingRole = false;
     });
+  }
+}
+
+Future<void> _loadUserTeam() async {
+  final user = supabase.auth.currentUser;
+  if (user == null) return;
+
+  try {
+    debugPrint('Loading user team for user: ${user.id}');
+
+    // 1. Try to find team where user is manager
+    var teamRes = await _runQuery(
+      supabase
+          .from('teams')
+          .select('id,name,users,manager')
+          .eq('manager', user.id),
+    );
+
+    debugPrint('Manager teamRes: $teamRes');
+
+    List teamList = [];
+    if (teamRes is List) {
+      teamList = teamRes;
+    } else if (teamRes is Map && teamRes.containsKey('data')) {
+      teamList = (teamRes['data'] ?? []) as List;
+    } else if (teamRes is Map) {
+      teamList = [teamRes];  // 单个对象
+    }
+
+    if (teamList.isNotEmpty) {
+      final team = teamList.first as Map;
+      if (mounted) {
+        setState(() {
+          _userTeamId = team['id'].toString();
+          _userDepartment = team['name']?.toString() ?? 'Unnamed Team';
+        });
+        debugPrint('Found manager team: $_userTeamId');
+      }
+    } else {
+      // 2. Try to find team where user is a member
+      var allTeams = await _runQuery(
+        supabase.from('teams').select('id,name,users'),
+      );
+
+      debugPrint('All teamsRes: $allTeams');
+
+      List allTeamsList = [];
+      if (allTeams is List) {
+        allTeamsList = allTeams;
+      } else if (allTeams is Map && allTeams.containsKey('data')) {
+        allTeamsList = (allTeams['data'] ?? []) as List;
+      } else if (allTeams is Map) {
+        allTeamsList = [allTeams];
+      }
+
+      // Find team containing current user
+      for (var t in allTeamsList) {
+        final team = t as Map;
+        final members = team['users'];
+        List<String> memberIds = [];
+
+        if (members is List) {
+          memberIds = members.map((m) => m.toString()).toList();
+        } else if (members is String) {
+          try {
+            final parsed = jsonDecode(members);
+            if (parsed is List) {
+              memberIds = parsed.map((m) => m.toString()).toList();
+            }
+          } catch (_) {}
+        }
+
+        if (memberIds.contains(user.id)) {
+          if (mounted) {
+            setState(() {
+              _userTeamId = team['id'].toString();
+              _userDepartment = team['name']?.toString() ?? 'Unnamed Team';
+            });
+            debugPrint('Found member team: $_userTeamId');
+          }
+          break;
+        }
+      }
+    }
+
+    debugPrint('Final _userTeamId: $_userTeamId');
+
+    if (_userTeamId != null && _userDepartment != null && _userDepartment!.isNotEmpty) {
+      await _loadDepartmentLeaveSchedule();
+    } else {
+      debugPrint('No team found for user, skip department leave load');
+    }
+  } catch (e) {
+    debugPrint('Kon team niet ophalen: $e');
+  }
+}
+  bool _departmentLoadingInProgress = false;
+
+  Future<void> _loadDepartmentLeaveSchedule() async {
+  if (_userTeamId == null || _userTeamId!.isEmpty) {
+    debugPrint('No team ID, skip loading department leave');
+    return;
+  }
+
+  if (_departmentLoadingInProgress) {
+    debugPrint('Department loading in progress, skip duplicate call');
+    return;
+  }
+
+  _departmentLoadingInProgress = true;
+  if (mounted) setState(() => _loadingDepartmentLeave = true);
+
+  debugPrint('Starting department leave load for team: $_userTeamId');
+
+  try {
+    // 1. Get team and its members
+    final teamRes = await _runQuery(
+      supabase
+          .from('teams')
+          .select('id,name,users,manager')
+          .eq('id', _userTeamId!),
+    );
+
+    debugPrint('teamRes: $teamRes');
+
+    Map teamData = {};
+    if (teamRes is Map) {
+      teamData = teamRes;
+    } else if (teamRes is List && teamRes.isNotEmpty) {
+      teamData = teamRes.first as Map;
+    }
+
+    List<String> departmentUserIds = [];
+
+    final members = teamData['users'];
+    if (members is List) {
+      departmentUserIds = members.map((m) => m.toString()).toList();
+    } else if (members is String) {
+      try {
+        final parsed = jsonDecode(members);
+        if (parsed is List) {
+          departmentUserIds = parsed.map((m) => m.toString()).toList();
+        }
+      } catch (e) {
+        debugPrint('Parse users failed: $e');
+      }
+    }
+
+    final managerId = teamData['manager']?.toString();
+    if (managerId != null && !departmentUserIds.contains(managerId)) {
+      departmentUserIds.add(managerId);
+    }
+
+    debugPrint('departmentUserIds: $departmentUserIds');
+
+    if (departmentUserIds.isEmpty) {
+      debugPrint('No users in team, set empty schedule');
+      if (mounted) setState(() {
+        _departmentLeaveSchedule = [];
+        _loadingDepartmentLeave = false;
+      });
+      _departmentLoadingInProgress = false;
+      return;
+    }
+
+    // 2. Get profiles for these members
+    final profilesRes = await _runQuery(
+      supabase
+          .from('profiles')
+          .select('id,name')
+          .inFilter('id', departmentUserIds),
+    );
+
+    debugPrint('profilesRes: $profilesRes');
+
+    List<String> teamMemberIds = [];
+    List<Map<String, dynamic>> profilesList = [];
+
+    if (profilesRes is List) {
+      profilesList = profilesRes.cast<Map<String, dynamic>>();
+    } else if (profilesRes is Map<String, dynamic>) {
+      profilesList = [profilesRes];
+    } else if (profilesRes is Map && profilesRes.containsKey('data')) {
+      final data = profilesRes['data'];
+      if (data is List) {
+        profilesList = data.cast<Map<String, dynamic>>();
+      } else if (data is Map<String, dynamic>) {
+        profilesList = [data];
+      }
+    }
+
+    teamMemberIds = profilesList
+        .map((p) => p['id']?.toString() ?? '')
+        .where((id) => id.isNotEmpty && id.length == 36)  // 过滤无效 uuid
+        .toList();
+
+    debugPrint('teamMemberIds: $teamMemberIds');
+
+    Map<String, String> userNames = {};
+
+    for (var p in profilesList) {
+      final pm = p as Map<String, dynamic>;
+      final uid = pm['id'] as String? ?? '';
+      final name = pm['name'] as String? ?? uid.substring(0, 8) + '...';
+      if (uid.isNotEmpty) {
+        userNames[uid] = name;
+      }
+    }
+    if (teamMemberIds.isEmpty) {
+      debugPrint('No valid profiles found, but continue with departmentUserIds as fallback');
+      // 临时 fallback：用 departmentUserIds（即使没 profile 名字，也能查 verlof）
+      teamMemberIds = departmentUserIds;
+      for (var uid in departmentUserIds) {
+        userNames[uid] = uid.substring(0, 8) + '...';
+      }
+    }
+
+    // 3. Get all leave requests for team members
+    final leaveRes = await _runQuery(
+      supabase
+          .from('verlof')
+          .select()
+          .inFilter('user_id', teamMemberIds)
+          .order('start', ascending: true),
+    );
+
+    debugPrint('leaveRes: $leaveRes');
+
+    List<Map<String, dynamic>> leaveRequests = [];
+    List leaveList = [];
+
+    if (leaveRes is List) {
+      leaveList = leaveRes;
+    } else if (leaveRes is Map && leaveRes.containsKey('data')) {
+      leaveList = (leaveRes['data'] ?? []) as List;
+    } else if (leaveRes != null) {
+      leaveList = [leaveRes];
+    }
+
+    leaveRequests = leaveList
+        .map((e) => Map<String, dynamic>.from(e as Map))
+        .toList();
+
+    debugPrint('Parsed leaveRequests count: ${leaveRequests.length}');
+
+    // 4. Build name map from profiles
+    for (var p in profilesList) {
+      final pm = Map<String, dynamic>.from(p);
+      userNames[pm['id'].toString()] = pm['name']?.toString() ?? pm['id'].toString().substring(0, 8) + '...';
+    }
+
+    // 5. Normalize leave data
+    _departmentLeaveSchedule = leaveRequests.map((leave) {
+      final uid = leave['user_id']?.toString() ?? '';
+
+      leave['start_date'] = leave['start']?.toString() ?? '';
+      leave['end_date'] = leave['end_time']?.toString() ?? '';
+
+      leave['days'] = leave['days_count'] ?? 0;
+
+      leave['applicant'] = userNames[uid] ?? uid;
+
+      final verlofState = leave['verlof_state']?.toString() ?? 'pending';
+      leave['status'] = verlofState;
+
+      leave['verlof_type'] = leave['verlof_type'] ?? 'onbekend';
+
+      return leave;
+    }).toList();
+
+    // Sort by start date
+    _departmentLeaveSchedule.sort((a, b) {
+      final dateA = DateTime.tryParse(a['start_date'] ?? '');
+      final dateB = DateTime.tryParse(b['start_date'] ?? '');
+      if (dateA == null || dateB == null) return 0;
+      return dateA.compareTo(dateB);
+    });
+
+    debugPrint('Final department schedule count: ${_departmentLeaveSchedule.length}');
+  } catch (e, st) {
+    debugPrint('Load department leave schedule failed: $e\n$st');
+  } finally {
+    _departmentLoadingInProgress = false;
+    if (mounted) setState(() => _loadingDepartmentLeave = false);
   }
 }
 
@@ -812,139 +1237,6 @@ class _DesktopLayoutState extends State<DesktopLayout> {
     }
     // 最后降级返回原对象（可能是同步数据）
     return b;
-  }
-
-  Future<void> _loadTasks() async {
-    setState(() => _loadingTasks = true);
-    try {
-      final builder = supabase.from('tasks').select();
-      final response = await _runQuery(builder);
-      List data = [];
-
-      if (response != null && (response.error == null)) {
-        final d = response.data ?? response;
-        if (d is List) {
-          data = List.from(d);
-        } else if (d != null) {
-          data = [d];
-        }
-      } else {
-        data = [];
-      }
-
-      if (data.isNotEmpty) {
-        _tasks = data.map<Map<String, dynamic>>((e) {
-          final map = Map<String, dynamic>.from(e as Map);
-          final rawMembers = map['members'];
-          List<Map<String, dynamic>> members = [];
-          if (rawMembers is String) {
-            try {
-              final parsed = jsonDecode(rawMembers);
-              if (parsed is List) {
-                members = parsed.map<Map<String, dynamic>>((m) => Map<String, dynamic>.from(m as Map)).toList();
-              }
-            } catch (_) {
-              members = [];
-            }
-          } else if (rawMembers is List) {
-            members = rawMembers.map<Map<String, dynamic>>((m) {
-              if (m is Map) return Map<String, dynamic>.from(m);
-              return {'display_name': m.toString()};
-            }).toList();
-          }
-          map['members'] = members;
-          return map;
-        }).toList();
-      } else {
-        final currentName = supabase.auth.currentUser?.userMetadata?['display_name'] ?? 'You';
-        _tasks = [
-          {
-            'id': 1,
-            'title': 'Inspect site A',
-            'description': 'Check soil samples and equipment.',
-            'members': [
-              {'display_name': currentName, 'status': 'online', 'days_absent': 0}
-            ],
-            'completed': false,
-          },
-          {
-            'id': 2,
-            'title': 'Prepare report for B',
-            'description': 'Compile weekly report with Rens.',
-            'members': [
-              {'display_name': currentName, 'status': 'online', 'days_absent': 0},
-              {'display_name': 'Rens', 'status': 'ziek', 'days_absent': 2}
-            ],
-            'completed': false,
-          },
-          {
-            'id': 3,
-            'title': 'Survey C alone',
-            'description': 'Solo survey and photo documentation.',
-            'members': [
-              {'display_name': currentName, 'status': 'online', 'days_absent': 0}
-            ],
-            'completed': false,
-          },
-        ];
-      }
-    } catch (e, st) {
-      debugPrint('Load tasks failed: $e\n$st');
-      final currentName = supabase.auth.currentUser?.userMetadata?['display_name'] ?? 'You';
-      _tasks = [
-        {
-          'id': 1,
-          'title': 'Inspect site A',
-          'description': 'Check soil samples and equipment.',
-          'members': [
-            {'display_name': currentName, 'status': 'online', 'days_absent': 0}
-          ],
-          'completed': false,
-        },
-        {
-          'id': 2,
-          'title': 'Prepare report for B',
-          'description': 'Compile weekly report with Rens.',
-          'members': [
-            {'display_name': currentName, 'status': 'online', 'days_absent': 0},
-            {'display_name': 'Rens', 'status': 'ziek', 'days_absent': 2}
-          ],
-          'completed': false,
-        },
-        {
-          'id': 3,
-          'title': 'Survey C alone',
-          'description': 'Solo survey and photo documentation.',
-          'members': [
-            {'display_name': currentName, 'status': 'online', 'days_absent': 0}
-          ],
-          'completed': false,
-        },
-      ];
-    } finally {
-      setState(() => _loadingTasks = false);
-    }
-  }
-
-  Future<void> _toggleTaskComplete(Map<String, dynamic> task) async {
-    final id = task['id'];
-    final newVal = !(task['completed'] == true);
-    setState(() {
-      final idx = _tasks.indexWhere((t) => t['id'] == id);
-      if (idx != -1) _tasks[idx]['completed'] = newVal;
-    });
-
-    try {
-      final builder = supabase.from('tasks').update({'completed': newVal}).eq('id', id);
-      final res = await _runQuery(builder);
-      if (res != null && res.error != null) throw res.error!;
-    } catch (e, st) {
-      debugPrint('Toggle task complete failed: $e\n$st');
-      setState(() {
-        final idx = _tasks.indexWhere((t) => t['id'] == id);
-        if (idx != -1) _tasks[idx]['completed'] = !newVal;
-      });
-    }
   }
 
   Future<void> _loadLeaveRequests() async {
@@ -1062,104 +1354,142 @@ class _DesktopLayoutState extends State<DesktopLayout> {
     }
   }
 
+  List<DataRow> _buildEmployeeRows() {
+  // 先按 applicant 分组（同一个员工的多条请假合并）
+  Map<String, List<Map<String, dynamic>>> grouped = {};
+  for (var leave in _departmentLeaveSchedule) {
+    final applicant = leave['applicant'] ?? 'Onbekend';
+    grouped.putIfAbsent(applicant, () => []);
+    grouped[applicant]!.add(leave);
+  }
+
+  List<DataRow> rows = [];
+
+  grouped.forEach((name, leaves) {
+    // 剩余天数（从数据库或计算，这里先用固定，后面从 leave_balance 表取）
+    int vakantie = 25;  // 假设
+    int persoonlijk = 5;
+    int ziek = 3;
+
+    // 每天的状态标记
+    List<String> statusCells = List.filled(7, '·');  // 默认上班
+
+    for (var leave in leaves) {
+      final start = DateTime.tryParse(leave['start_date'] ?? '');
+      final end = DateTime.tryParse(leave['end_date'] ?? '');
+      if (start == null || end == null) continue;
+
+      final status = leave['status']?.toLowerCase() ?? 'pending';
+      String mark = 'v';  // 默认 v
+      if (status == 'sick' || status == 'ziek') mark = 'z';
+      if (status == 'persoonlijk') mark = 'p';
+
+      // 简单假设当前周（你需要根据当前周日期计算）
+      // 这里先用固定周一到周日演示，实际需根据当前显示周匹配日期
+      for (int i = 0; i < 7; i++) {
+        // 假设周一为 start 的那天，实际需计算
+        statusCells[i] = mark;
+      }
+    }
+
+    rows.add(DataRow(cells: [
+      DataCell(Text(name)),
+      DataCell(Text('$vakantie')),
+      DataCell(Text('$persoonlijk')),
+      DataCell(Text('$ziek')),
+      ...statusCells.map((s) {
+        Color bg = Colors.transparent;
+        Color textColor = Colors.black;
+        if (s == 'z') {
+          bg = Colors.red.withOpacity(0.3);
+          textColor = Colors.red;
+        } else if (s == 'v') {
+          bg = Colors.green.withOpacity(0.3);
+        } else if (s == 'p') {
+          bg = Colors.blue.withOpacity(0.3);
+        } else if (s == 'w') {
+          bg = Colors.grey;
+        }
+
+        return DataCell(
+          Container(
+            padding: const EdgeInsets.all(8),
+            decoration: BoxDecoration(color: bg, borderRadius: BorderRadius.circular(4)),
+            child: Center(child: Text(s, style: TextStyle(color: textColor))),
+          ),
+        );
+      }),
+    ]));
+  });
+
+  return rows;
+}
+
   // 在右侧 content 中加入 leave 显示
   Widget _buildRightContent() {
-    if (_selectedSection == _Section.work) {
-      if (_loadingTasks) {
+    if (_selectedSection == _Section.team) {
+      if (_loadingDepartmentLeave) {
         return const Center(child: CircularProgressIndicator());
       }
-      return Padding(
-        padding: const EdgeInsets.all(12.0),
-        child: SingleChildScrollView(
-          child: Wrap(
-            spacing: 12,
-            runSpacing: 12,
-            children: _tasks.map((task) {
-              final members = List<Map<String, dynamic>>.from(task['members'] ?? []);
-              final completed = task['completed'] == true;
-              return SizedBox(
-                width: 360,
-                child: Card(
-                  elevation: 4,
-                  shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(10)),
-                  child: Padding(
-                    padding: const EdgeInsets.all(12.0),
-                    child: Column(
-                      crossAxisAlignment: CrossAxisAlignment.start,
-                      children: [
-                        Row(
-                          children: [
-                            Expanded(
-                              child: Text(task['title'] ?? 'No title',
-                                  style: const TextStyle(fontSize: 18, fontWeight: FontWeight.bold)),
-                            ),
-                            Checkbox(
-                              value: completed,
-                              onChanged: (_) => _toggleTaskComplete(task),
-                            ),
-                          ],
-                        ),
-                        const SizedBox(height: 6),
-                        Text(task['description'] ?? '', style: const TextStyle(color: Colors.black87)),
-                        const SizedBox(height: 12),
-                        const Text('Members', style: TextStyle(fontWeight: FontWeight.bold)),
-                        const SizedBox(height: 8),
-                        Column(
-                          children: members.map((m) {
-                            final status = (m['status'] ?? '').toString();
-                            final days = m['days_absent'] ?? 0;
-                            final name = m['display_name'] ?? 'Unknown';
-                            Color badgeColor;
-                            String badgeText;
-                            if (status == 'online') {
-                              badgeColor = Colors.green;
-                              badgeText = 'Online';
-                            } else if (status == 'ziek') {
-                              badgeColor = Colors.red;
-                              badgeText = 'Ziek ($days d)';
-                            } else if (status == 'vakantie') {
-                              badgeColor = Colors.orange;
-                              badgeText = 'Vakantie';
-                            } else if (status == 'personel verlof') {
-                              badgeColor = Colors.purple;
-                              badgeText = 'Pers. verlof';
-                            } else {
-                              badgeColor = Colors.grey;
-                              badgeText = status;
-                            }
-                            return ListTile(
-                              dense: true,
-                              contentPadding: EdgeInsets.zero,
-                              leading: CircleAvatar(child: Text(name.isNotEmpty ? name[0] : '?')),
-                              title: Text(name),
-                              trailing: Container(
-                                padding: const EdgeInsets.symmetric(horizontal: 8, vertical: 4),
-                                decoration: BoxDecoration(color: badgeColor.withOpacity(0.15), borderRadius: BorderRadius.circular(8)),
-                                child: Text(badgeText, style: TextStyle(color: badgeColor, fontSize: 12)),
-                              ),
-                            );
-                          }).toList(),
-                        ),
-                        const SizedBox(height: 8),
-                        Row(
-                          mainAxisAlignment: MainAxisAlignment.end,
-                          children: [
-                            TextButton(
-                              onPressed: () => _toggleTaskComplete(task),
-                              child: Text(completed ? 'Mark Incomplete' : 'Confirm Done'),
-                            )
-                          ],
-                        )
-                      ],
-                    ),
-                  ),
-                ),
-              );
-            }).toList(),
+      if (_departmentLeaveSchedule.isEmpty) {
+        return Center(
+          child: Padding(
+            padding: const EdgeInsets.all(24.0),
+            child: Text(
+              'Geen afdelingsverlofschema beschikbaar.',
+              style: TextStyle(color: Colors.black54),
+            ),
           ),
-        ),
-      );
-    }
+        );
+      }
+
+      return Padding(
+        padding: const EdgeInsets.all(16.0),
+        child: Column(
+          crossAxisAlignment: CrossAxisAlignment.start,
+            children: [
+              Row(
+                mainAxisAlignment: MainAxisAlignment.spaceBetween,
+                children: [
+                  Text(
+                  'Verlofschema: $_userDepartment',
+                  style: const TextStyle(fontSize: 20, fontWeight: FontWeight.bold),
+                  ),
+                  Row(
+                    children: [
+                      IconButton(icon: const Icon(Icons.chevron_left), onPressed: () {}),  // 后面实现翻周
+                      const Text('Week 3 • 16-22 jan 2026'), 
+                      IconButton(icon: const Icon(Icons.chevron_right), onPressed: () {}), // 动态日期
+                    ],
+                  ),
+                ],
+              ),
+              const SizedBox(height: 16),
+              SingleChildScrollView(
+                scrollDirection: Axis.horizontal,
+                child: DataTable(
+                  columnSpacing: 20,
+                  headingRowColor: WidgetStateProperty.all(Colors.grey[200]),
+                  columns: const [
+                    DataColumn(label: Text('Name')),
+                    DataColumn(label: Text('Vakantie')),
+                    DataColumn(label: Text('Persoonlijk')),
+                    DataColumn(label: Text('Ziek')),
+                    DataColumn(label: Text('Mo')),
+                    DataColumn(label: Text('Tu')),
+                    DataColumn(label: Text('Wo')),
+                    DataColumn(label: Text('Th')),
+                    DataColumn(label: Text('Fr')),
+                    DataColumn(label: Text('Sa')),
+                    DataColumn(label: Text('Su')),
+                  ],
+                  rows: _buildEmployeeRows(),  // 下面定义
+                ),
+              ),
+            ],
+          ),
+        );
+      }
 
     if (_selectedSection == _Section.leave) {
       if (_loadingLeave) return const Center(child: CircularProgressIndicator());
@@ -1256,9 +1586,9 @@ class _DesktopLayoutState extends State<DesktopLayout> {
   }
 
   void _onSidebarTap(String label) {
-    if (label == 'Work') {
+    if (label == 'Team') {
       setState(() {
-        _selectedSection = _Section.work;
+        _selectedSection = _Section.team;
       });
     } else if (label == 'Home') {
       setState(() {
@@ -1464,7 +1794,7 @@ class _DesktopLayoutState extends State<DesktopLayout> {
                               ),
                               const Divider(),
                               _SidebarItem(icon: Icons.home, label: 'Home', onTap: () => _onSidebarTap('Home')),
-                              _SidebarItem(icon: Icons.folder, label: 'Work', onTap: () => _onSidebarTap('Work')),
+                              _SidebarItem(icon: Icons.folder, label: 'Team', onTap: () => _onSidebarTap('Team')),
                               _SidebarItem(icon: Icons.message, label: 'Messages', onTap: () => _onSidebarTap('Messages')),
                               _SidebarItem(icon: Icons.beach_access, label: 'Leave', onTap: () => _onSidebarTap('Leave')),
                             ],
