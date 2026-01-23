@@ -1,7 +1,6 @@
 import 'package:flutter/material.dart';
 import 'package:geoprof/pages/officemanager.dart';
 import 'package:supabase_flutter/supabase_flutter.dart';
-import 'package:geoprof/pages/dashboard.dart';
 import 'package:geoprof/pages/admin.dart';
 import 'package:geoprof/pages/home.dart';
 import 'package:geoprof/pages/login.dart';
@@ -37,7 +36,6 @@ class MyApp extends StatelessWidget {
       routes: {
         '/': (context) => const HomePage(),
         '/login': (context) => const LoginPage(),
-        '/dashboard': (context) => const Dashboard(),
         '/admin': (context) => const AdminPage(),
         '/profile': (context) => const ProfilePage(),
         '/verlof': (context) => const VerlofPage(),
