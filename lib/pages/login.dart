@@ -53,7 +53,7 @@ class _MobileLayoutState extends State<MobileLayout> {
       if (!success) {
         _error = "Invalid email or password";
       } else {
-        Navigator.pushReplacementNamed(context, '/dashboard');
+        Navigator.pushReplacementNamed(context, '/verlof');
       }
     });
   }
@@ -106,6 +106,7 @@ class _MobileLayoutState extends State<MobileLayout> {
                   ),
                   const SizedBox(height: 8),
                   TextField(
+                    key: const Key('email_field'),
                     controller: _emailController,
                     decoration: InputDecoration(
                       prefixIcon: const Icon(Icons.email_outlined),
@@ -125,6 +126,7 @@ class _MobileLayoutState extends State<MobileLayout> {
                   ),
                   const SizedBox(height: 8),
                   TextField(
+                    key: const Key('password_field'),
                     controller: _passwordController,
                     obscureText: true,
                     decoration: InputDecoration(
@@ -150,6 +152,7 @@ class _MobileLayoutState extends State<MobileLayout> {
                     width: double.infinity,
                     height: 48,
                     child: ElevatedButton(
+                      key: const Key('login_button'),
                       style: ElevatedButton.styleFrom(
                         backgroundColor: Colors.redAccent,
                         shape: RoundedRectangleBorder(
@@ -223,7 +226,7 @@ class _DesktopLayoutState extends State<DesktopLayout> {
       if (!success) {
         _error = "Invalid email or password";
       } else {
-        Navigator.pushReplacementNamed(context, '/dashboard');
+        Navigator.pushReplacementNamed(context, '/verlof');
       }
     });
   }
@@ -289,9 +292,10 @@ class _DesktopLayoutState extends State<DesktopLayout> {
                         ),
                         const SizedBox(height: 8),
                         TextField(
+                          key: const Key('email_field'),
                           controller: _emailController,
                           decoration: InputDecoration(
-                            prefixIcon: Icon(Icons.email_outlined),
+                            prefixIcon: const Icon(Icons.email_outlined),
                             border: OutlineInputBorder(
                               borderRadius: BorderRadius.circular(12),
                             ),
@@ -308,10 +312,11 @@ class _DesktopLayoutState extends State<DesktopLayout> {
                         ),
                         const SizedBox(height: 8),
                         TextField(
+                          key: const Key('password_field'),
                           controller: _passwordController,
                           obscureText: true,
                           decoration: InputDecoration(
-                            prefixIcon: Icon(Icons.lock_outline),
+                            prefixIcon: const Icon(Icons.lock_outline),
                             border: OutlineInputBorder(
                               borderRadius: BorderRadius.circular(12),
                             ),
@@ -333,6 +338,7 @@ class _DesktopLayoutState extends State<DesktopLayout> {
                           width: double.infinity,
                           height: 48,
                           child: ElevatedButton(
+                            key: const Key('login_button'),
                             style: ElevatedButton.styleFrom(
                               backgroundColor: Colors.redAccent,
                               shape: RoundedRectangleBorder(
@@ -346,7 +352,7 @@ class _DesktopLayoutState extends State<DesktopLayout> {
                                   )
                                 : const Text(
                                     'Login',
-                                    style: TextStyle(fontSize: 20, color: Colors.white),
+                                    style: TextStyle(fontSize: 18, color: Colors.white),
                                   ),
                           ),
                         ),
