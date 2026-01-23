@@ -1,5 +1,3 @@
-// lib/pages/office_manager_dashboard.dart
-
 import 'package:flutter/foundation.dart';
 import 'package:flutter/material.dart';
 import 'package:supabase_flutter/supabase_flutter.dart';
@@ -25,8 +23,6 @@ class TeamManagement extends StatelessWidget {
 
       if (data == null) return false;
       final role = (data['role'] as String?)?.toLowerCase() ?? '';
-      debugPrint('OfficeManager check: user role = $role');
-      // allow both office_manager and admin users to access this dashboard
       return role == 'office_manager' || role == 'admin';
     } catch (e) {
       debugPrint('Role check error: $e');
@@ -51,243 +47,448 @@ class TeamManagement extends StatelessWidget {
 
         return (defaultTargetPlatform == TargetPlatform.android ||
                 defaultTargetPlatform == TargetPlatform.iOS)
-            ? const MobileLayout()
-            : const DesktopLayout();
+            ? const MobileTeamLayout()
+            : const DesktopTeamLayout();
       },
     );
   }
 }
 
-class Team {
-  final String uuid;
-  final String name;
-  final String role;
-  final String email;
+class AppTeam {
+  final String id;
+  final String? name;
+  final DateTime? createdAt;
+  final List<String> userIds;
+  final String? managerId;
 
-  Team({
-    required this.uuid,
-    required this.name,
-    required this.role,
-    required this.email,
+  AppTeam({
+    required this.id,
+    this.name,
+    this.createdAt,
+    this.userIds = const [],
+    this.managerId,
   });
+
+  factory AppTeam.fromJson(Map<String, dynamic> json) {
+    return AppTeam(
+      id: json['id'] as String,
+      name: json['name'] as String?,
+      createdAt: json['created_at'] != null
+          ? DateTime.tryParse(json['created_at'] as String)
+          : null,
+      userIds: (json['users'] as List<dynamic>?)?.cast<String>() ?? [],
+      managerId: json['manager'] as String?,
+    );
+  }
+
+  String get displayName => name ?? 'Team ${id.substring(0, 8)}';
 }
 
-Future<List<Team>> loadTeams() async { 
-  try { 
-    final response = await supabase.functions.invoke('super-processor'); 
-    final data = response.data as Map<String, dynamic>?; 
-    if (data == null || data['users'] == null) { 
-      debugPrint('loadTeams: no users returned'); return []; 
-    } final List<dynamic> rawUsers = data['users']; 
-    debugPrint('loadTeams: fetched ${rawUsers.length} users'); 
-    final Teams = rawUsers.map((u) { 
-      final map = Map<String, dynamic>.from(u); 
-      return Team( uuid: map['id']?.toString() ?? '', name: map['user_metadata']?['display_name']?.toString() ?? '', role: map['role']?.toString() ?? '', email: map['email']?.toString() ?? '',); 
-    }).toList(); return Teams; 
-  } catch (e, st) { 
-    debugPrint('loadTeams ERROR: $e\n$st'); return []; 
+Future<List<AppTeam>> loadAllTeams() async {
+  try {
+    final response = await supabase
+        .from('teams')
+        .select()
+        .order('created_at', ascending: false);
+
+    return (response as List)
+        .map((json) => AppTeam.fromJson(json as Map<String, dynamic>))
+        .toList();
+  } catch (e) {
+    debugPrint('Error loading teams: $e');
+    return [];
   }
 }
 
+Future<void> showCreateTeamDialog(BuildContext context, VoidCallback refresh) async {
+  final nameCtrl = TextEditingController();
+
+  await showDialog(
+    context: context,
+    builder: (ctx) => AlertDialog(
+      title: const Text('Nieuw team aanmaken'),
+      content: TextField(
+        controller: nameCtrl,
+        decoration: const InputDecoration(
+          labelText: 'Team naam *',
+          hintText: 'Bijvoorbeeld: Monteurs regio Oost',
+        ),
+        autofocus: true,
+      ),
+      actions: [
+        TextButton(
+          onPressed: () => Navigator.pop(ctx),
+          child: const Text('Annuleren'),
+        ),
+        ElevatedButton(
+          onPressed: () async {
+            final name = nameCtrl.text.trim();
+            if (name.isEmpty) {
+              ScaffoldMessenger.of(context).showSnackBar(
+                const SnackBar(content: Text('Teamnaam is verplicht')),
+              );
+              return;
+            }
+
+            try {
+              final response = await supabase.from('teams').insert({
+                'name': name,
+              }).select().single();
+              final newTeam = AppTeam.fromJson(response);
+              Navigator.pop(ctx);
+              refresh();
+
+              ScaffoldMessenger.of(context).showSnackBar(
+                SnackBar(content: Text('Team "$name" succesvol aangemaakt')),
+              );
+            } catch (e) {
+              ScaffoldMessenger.of(context).showSnackBar(
+                SnackBar(content: Text('Aanmaken mislukt: $e')),
+              );
+            }
+          },
+          child: const Text('Aanmaken'),
+        ),
+      ],
+    ),
+  );
+}
+
+Future<void> _showAddMembersDialog(
+  BuildContext context,
+  AppTeam team,
+  VoidCallback refresh,
+) async {
+  List<Map<String, dynamic>> availableUsers = [];
+  bool loading = true;
+
+  try {
+    final res = await supabase
+        .from('profiles')  
+        .select('id, name, email')  
+        .neq('id', supabase.auth.currentUser!.id); 
+
+    availableUsers = List<Map<String, dynamic>>.from(res);
+
+    
+    availableUsers = availableUsers.where((u) {
+      return !team.userIds.contains(u['id']);
+    }).toList();
+
+    loading = false;
+  } catch (e) {
+    loading = false;
+    ScaffoldMessenger.of(context).showSnackBar(SnackBar(content: Text('Leden laden mislukt: $e')));
+  }
 
 
+  final selectedIds = <String>{};
 
-Future<void> changeUserRole(String userUuid, String newRole) async {
-  final response = await supabase.functions.invoke(
-    'super-api',  
-    body: {
-      'user_id': userUuid,
-      'role': newRole,
-    },
+  if (!context.mounted) return;
+
+  await showDialog(
+    context: context,
+    builder: (ctx) => StatefulBuilder(
+      builder: (ctx, setDialogState) => AlertDialog(
+        title: Text('Leden toevoegen aan ${team.displayName}'),
+        content: SizedBox(
+          width: double.maxFinite,
+          height: 400, 
+          child: loading
+              ? const Center(child: CircularProgressIndicator())
+              : availableUsers.isEmpty
+                  ? const Center(child: Text('Geen beschikbare gebruikers'))
+                  : ListView.builder(
+                      itemCount: availableUsers.length,
+                      itemBuilder: (context, i) {
+                        final user = availableUsers[i];
+                        final userId = user['id'] as String;
+                        final name = user['full_name'] as String? ?? user['email'] ?? userId.substring(0, 8);
+
+                        return CheckboxListTile(
+                          title: Text(name),
+                          subtitle: Text(user['email'] ?? '', style: const TextStyle(fontSize: 12)),
+                          value: selectedIds.contains(userId),
+                          onChanged: (bool? value) {
+                            setDialogState(() {
+                              if (value == true) {
+                                selectedIds.add(userId);
+                              } else {
+                                selectedIds.remove(userId);
+                              }
+                            });
+                          },
+                        );
+                      },
+                    ),
+        ),
+        actions: [
+          TextButton(
+            onPressed: () => Navigator.pop(ctx),
+            child: const Text('Later'),
+          ),
+          ElevatedButton(
+            onPressed: selectedIds.isEmpty
+                ? null
+                : () async {
+                    try {
+                      await supabase.from('teams').update({
+                        'users': team.userIds + selectedIds.toList(),
+                      }).eq('id', team.id);
+                      Navigator.pop(ctx);
+                      ScaffoldMessenger.of(context).showSnackBar(
+                        SnackBar(content: Text('${selectedIds.length} leden toegevoegd')),
+                      );
+                      refresh();
+                    } catch (e) {
+                      ScaffoldMessenger.of(context).showSnackBar(
+                        SnackBar(content: Text('Toevoegen mislukt: $e')),
+                      );
+                    }
+                  },
+            child: const Text('Toevoegen'),
+          ),
+        ],
+      ),
+    ),
+  );
+}
+
+Future<void> _showRemoveMembersDialog(
+  BuildContext context,
+  AppTeam team,
+  VoidCallback refresh,
+) async {
+  List<Map<String, dynamic>> currentMembers = [];
+  bool loading = true;
+  String? errorMessage;
+
+  try {
+    if (team.userIds.isEmpty) {
+      loading = false;
+    } else {
+      final res = await supabase
+          .from('profiles')
+          .select('id, name, email')  
+          .inFilter('id', team.userIds);
+
+      currentMembers = List<Map<String, dynamic>>.from(res);
+
+      
+      loading = false;
+    }
+  } catch (e) {
+    loading = false;
+    errorMessage = 'Kon teamleden niet laden: $e';
+    debugPrint(errorMessage);
+  }
+
+  
+  final selectedIdsToRemove = <String>{};
+
+  if (!context.mounted) return;
+
+  await showDialog(
+    context: context,
+    builder: (ctx) => StatefulBuilder(
+      builder: (ctx, setDialogState) => AlertDialog(
+        title: Text('Leden verwijderen uit ${team.displayName}'),
+        content: SizedBox(
+          width: double.maxFinite,
+          height: 400,
+          child: loading
+              ? const Center(child: CircularProgressIndicator())
+              : errorMessage != null
+                  ? Center(child: Text(errorMessage, style: const TextStyle(color: Colors.red)))
+                  : team.userIds.isEmpty
+                      ? const Center(child: Text('Dit team heeft geen leden'))
+                      : currentMembers.isEmpty
+                          ? const Center(child: Text('Geen profielgegevens beschikbaar'))
+                          : ListView.builder(
+                              itemCount: currentMembers.length,
+                              itemBuilder: (context, i) {
+                                final member = currentMembers[i];
+                                final userId = member['id'] as String;
+                                final name = member['full_name'] as String? ??
+                                    member['name'] as String? ??
+                                    member['email'] as String? ??
+                                    userId.substring(0, 8) + '...';
+
+                                return CheckboxListTile(
+                                  title: Text(name),
+                                  subtitle: member['email'] != null
+                                      ? Text(
+                                          member['email'],
+                                          style: const TextStyle(fontSize: 12, color: Colors.grey),
+                                        )
+                                      : null,
+                                  secondary: const Icon(Icons.person),
+                                  value: selectedIdsToRemove.contains(userId),
+                                  onChanged: (bool? value) {
+                                    setDialogState(() {
+                                      if (value == true) {
+                                        selectedIdsToRemove.add(userId);
+                                      } else {
+                                        selectedIdsToRemove.remove(userId);
+                                      }
+                                    });
+                                  },
+                                );
+                              },
+                            ),
+        ),
+        actions: [
+          TextButton(
+            onPressed: () => Navigator.pop(ctx),
+            child: const Text('Annuleren'),
+          ),
+          ElevatedButton.icon(
+            icon: const Icon(Icons.delete_forever, color: Colors.white),
+            label: const Text('Verwijder geselecteerd'),
+            style: ElevatedButton.styleFrom(
+              backgroundColor: Colors.red,
+            ),
+            onPressed: selectedIdsToRemove.isEmpty
+                ? null
+                : () async {
+                    try {
+                      final remainingIds = team.userIds
+                          .where((id) => !selectedIdsToRemove.contains(id))
+                          .toList();
+
+                      await supabase.from('teams').update({
+                        'users': remainingIds,
+                      }).eq('id', team.id);
+
+                      Navigator.pop(ctx);
+
+                      ScaffoldMessenger.of(context).showSnackBar(
+                        SnackBar(
+                          content: Text(
+                            '${selectedIdsToRemove.length} lid(den) verwijderd',
+                          ),
+                        ),
+                      );
+
+                      refresh();
+                    } catch (e) {
+                      ScaffoldMessenger.of(context).showSnackBar(
+                        SnackBar(content: Text('Verwijderen mislukt: $e')),
+                      );
+                    }
+                  },
+          ),
+        ],
+      ),
+    ),
+  );
+}
+Future<void> showEditTeamDialog(BuildContext context, AppTeam team, VoidCallback onSuccess) async {
+  final nameController = TextEditingController(text: team.name);
+
+  await showDialog(
+    context: context,
+    builder: (context) => AlertDialog(
+      title: const Text('Team bewerken'),
+      content: TextField(
+        controller: nameController,
+        decoration: const InputDecoration(labelText: 'Team naam'),
+      ),
+      actions: [
+        TextButton(
+          onPressed: () => Navigator.pop(context),
+          child: const Text('Annuleren'),
+        ),
+        ElevatedButton(
+          onPressed: () async {
+            final newName = nameController.text.trim();
+            if (newName.isEmpty || newName == team.name) {
+              Navigator.pop(context);
+              return;
+            }
+
+            try {
+              await supabase.from('teams').update({'name': newName}).eq('id', team.id);
+              Navigator.pop(context);
+              onSuccess();
+              ScaffoldMessenger.of(context).showSnackBar(
+                const SnackBar(content: Text('Naam bijgewerkt')),
+              );
+            } catch (e) {
+              ScaffoldMessenger.of(context).showSnackBar(
+                SnackBar(content: Text('Fout: $e')),
+              );
+            }
+          },
+          child: const Text('Opslaan'),
+        ),
+      ],
+    ),
+  );
+}
+
+Future<void> confirmDeleteTeam(BuildContext context, AppTeam team, VoidCallback onSuccess) async {
+  final confirmed = await showDialog<bool>(
+    context: context,
+    builder: (context) => AlertDialog(
+      title: const Text('Team verwijderen?'),
+      content: Text('Weet je zeker dat je "${team.displayName}" wilt verwijderen?'),
+      actions: [
+        TextButton(
+          onPressed: () => Navigator.pop(context, false),
+          child: const Text('Annuleren'),
+        ),
+        ElevatedButton(
+          style: ElevatedButton.styleFrom(backgroundColor: Colors.red),
+          onPressed: () => Navigator.pop(context, true),
+          child: const Text('Verwijderen'),
+        ),
+      ],
+    ),
   );
 
-  if (response.data['error'] != null) {
-    throw response.data['error']!;
+  if (confirmed != true) return;
+
+  try {
+    await supabase.from('teams').delete().eq('id', team.id);
+    onSuccess();
+    ScaffoldMessenger.of(context).showSnackBar(
+      const SnackBar(content: Text('Team verwijderd')),
+    );
+  } catch (e) {
+    ScaffoldMessenger.of(context).showSnackBar(
+      SnackBar(content: Text('Fout bij verwijderen: $e')),
+    );
   }
 }
 
-// ====================== MOBILE LAYOUT ======================
-class MobileLayout extends StatefulWidget {
-  const MobileLayout({super.key});
+class MobileTeamLayout extends StatefulWidget {
+  const MobileTeamLayout({super.key});
 
   @override
-  State<MobileLayout> createState() => _MobileLayoutState();
+  State<MobileTeamLayout> createState() => _MobileTeamLayoutState();
 }
 
-class _MobileLayoutState extends State<MobileLayout> {
-  List<Team> _Teams = [];
+class _MobileTeamLayoutState extends State<MobileTeamLayout> {
+  List<AppTeam> _teams = [];
   bool _loading = true;
 
   @override
   void initState() {
     super.initState();
-    _refresh();
+    _loadTeams();
   }
 
-  Future<void> _refresh() async {
+  Future<void> _loadTeams() async {
     setState(() => _loading = true);
-    final list = await loadTeams();
-    setState(() {
-      _Teams = list;
-      _loading = false;
-    });
-  }
-
-  
-
-  // Desktop dialog handler intentionally implemented in Desktop state class
-
-  // _showChangeRoleDialogDesktop has been moved to the Desktop state class
-
-  Future<void> _showChangeRoleDialog(Team e) async {
-    final roles = ['worker', 'manager'];
-    String selected = e.role;
-
-    await showDialog<void>(
-      context: context,
-      builder: (ctx) => AlertDialog(
-        title: Text('Change role for ${e.name}'),
-        content: StatefulBuilder(builder: (ctx2, setState) {
-          return DropdownButtonFormField<String>(
-            value: selected,
-            items: roles.map((r) => DropdownMenuItem(value: r, child: Text(r))).toList(),
-            onChanged: (v) => setState(() => selected = v ?? selected),
-            decoration: const InputDecoration(labelText: 'Role'),
-          );
-        }),
-        actions: [
-          TextButton(onPressed: () => Navigator.pop(ctx), child: const Text('Cancel')),
-          ElevatedButton(
-            onPressed: () async {
-              Navigator.pop(ctx);
-              if (selected == e.role) return;
-              try {
-                // Try update first
-                final upd = await supabase.from('permissions').update({'role': selected}).eq('user_uuid', e.uuid);
-                // If update returned empty or no match, insert
-                if (upd == null || (upd is List && upd.isEmpty) || (upd is Map && upd.containsKey('error') && upd['error'] != null)) {
-                  await supabase.from('permissions').insert({'user_uuid': e.uuid, 'role': selected});
-                }
-                ScaffoldMessenger.of(context).showSnackBar(SnackBar(content: Text('Role updated: $selected')));
-                await _refresh();
-              } catch (err) {
-                debugPrint('Change role failed: $err');
-                ScaffoldMessenger.of(context).showSnackBar(SnackBar(content: Text('Failed to update role: $err')));
-              }
-            },
-            child: const Text('Save'),
-          ),
-        ],
-      ),
-    );
-  }
-
-  Future<void> _confirmDeleteUser(Team e) async {
-    final confirm = await showDialog<bool>(
-      context: context,
-      builder: (ctx) => AlertDialog(
-        title: Text('Delete ${e.name}?'),
-        content: const Text('This will permanently delete the user. Are you sure?'),
-        actions: [
-          TextButton(onPressed: () => Navigator.pop(ctx, false), child: const Text('Cancel')),
-          ElevatedButton(
-            style: ElevatedButton.styleFrom(backgroundColor: Colors.red),
-            onPressed: () => Navigator.pop(ctx, true),
-            child: const Text('Delete'),
-          ),
-        ],
-      ),
-    );
-
-    if (confirm != true) return;
-
-    try {
-      // call your edge function to delete user
-      final resp = await supabase.functions.invoke('delete-user', body: {'user_id': e.uuid});
-
-      if (resp.data == null || resp.data['error'] != null) {
-        final err = resp.data?['error'] ?? 'Unknown error';
-        throw err;
-      }
-
-      if (context.mounted) ScaffoldMessenger.of(context).showSnackBar(SnackBar(content: Text('Deleted ${e.name}')));
-      await _refresh();
-    } catch (err) {
-      debugPrint('Delete user failed: $err');
-      if (context.mounted) ScaffoldMessenger.of(context).showSnackBar(SnackBar(content: Text('Failed to delete user: $err')));
+    final teams = await loadAllTeams();
+    if (mounted) {
+      setState(() {
+        _teams = teams;
+        _loading = false;
+      });
     }
   }
-
-  void _showInviteDialog() {
-    final emailCtrl = TextEditingController();
-    final nameCtrl = TextEditingController();
-    final deptCtrl = TextEditingController();
-
-    showDialog(
-      context: context,
-      builder: (ctx) => AlertDialog(
-        title: const Text('Nieuw Team'),
-        content: SizedBox(
-          width: 400,
-          child: Column(
-            mainAxisSize: MainAxisSize.min,
-            children: [
-              TextField(controller: emailCtrl, decoration: const InputDecoration(labelText: 'Email *')),
-              const SizedBox(height: 12),
-              TextField(controller: nameCtrl, decoration: const InputDecoration(labelText: 'Name *')),
-              const SizedBox(height: 12),
-              TextField(controller: deptCtrl, decoration: const InputDecoration(labelText: 'Role (optional)')),
-            ],
-          ),
-        ),
-
-        // (desktop change-role dialog removed from here; implemented in Desktop state class)
-        actions: [
-          TextButton(onPressed: () => Navigator.pop(ctx), child: const Text('Cancel')),
-          ElevatedButton(
-            style: ElevatedButton.styleFrom(backgroundColor: Colors.green),
-            onPressed: () async {
-              final email = emailCtrl.text.trim();
-              final name = nameCtrl.text.trim();
-              final dept = deptCtrl.text.trim();
-              if (email.isEmpty || name.isEmpty) return;
-
-              try {
-                final resp = await supabase.auth.signUp(email: email, password: 'temp123456');
-
-                if (resp.user != null) {
-                  // permissions
-                  await supabase.from('permissions').insert({
-                    'user_uuid': resp.user!.id,
-                    'role': 'worker',
-                  });
-
-                  // auth.users  meta_data
-                  await supabase.auth.updateUser(UserAttributes(
-                    data: {
-                      'full_name': name,
-                      'department': dept,
-                    },
-                  ));
-
-                  if (ctx.mounted) Navigator.pop(ctx);
-                  ScaffoldMessenger.of(context).showSnackBar(SnackBar(content: Text('Add Sucsses$email')));
-                  _refresh();
-                }
-              } catch (e) {
-                ScaffoldMessenger.of(context).showSnackBar(const SnackBar(content: Text('Add Failed, email may already exist')));
-              }
-            },
-            child: const Text('Add'),
-          ),
-        ],
-      ),
-    );
-  }
-
-  // _showChangeRoleDialogDesktop removed from mobile state — implemented in Desktop state
-
-  // desktop-role-dialog was accidentally defined here, moved into Desktop state
 
   @override
   Widget build(BuildContext context) {
@@ -300,64 +501,50 @@ class _MobileLayoutState extends State<MobileLayout> {
               children: [
                 HeaderBar(),
                 Expanded(
-                  child: SingleChildScrollView(
-                    padding: const EdgeInsets.only(top: 16, left: 16, right: 16, bottom: 100),
-                    child: Column(
-                      crossAxisAlignment: CrossAxisAlignment.start,
-                      children: [
-                        Row(
-                          children: [
-                            const Text('Team manager', style: TextStyle(fontSize: 24, fontWeight: FontWeight.bold)),
-                            const Spacer(),
-                            ElevatedButton.icon(
-                              onPressed: _showInviteDialog,
-                              icon: const Icon(Icons.person_add),
-                              label: const Text('Add Team'),
-                              style: ElevatedButton.styleFrom(backgroundColor: Colors.green),
-                            ),
-                          ],
-                        ),
-                        const SizedBox(height: 20),
-                        if (_loading) const Center(child: CircularProgressIndicator()),
-                        if (!_loading && _Teams.isEmpty) const Center(child: Text('No Teams found.', style: TextStyle(fontSize: 18))),
-                        if (!_loading && _Teams.isNotEmpty)
-                          ..._Teams.map((e) => Card(
-                                margin: const EdgeInsets.symmetric(vertical: 6),
-                                child: ListTile(
-                                  leading: CircleAvatar(child: Text(e.name.isNotEmpty ? e.name[0] : '?')),
-                                  title: Text(e.name),
-                                  subtitle: Text(e.role),
-                                  trailing: Column(
-                                    mainAxisSize: MainAxisSize.min,
-                                    crossAxisAlignment: CrossAxisAlignment.end,
-                                    children: [
-                                      Text(e.uuid.substring(0, 8), style: const TextStyle(fontSize: 10, color: Colors.grey)),
-                                      const SizedBox(height: 6),
-                                      Row(
+                  child: RefreshIndicator(
+                    onRefresh: _loadTeams,
+                    child: _loading
+                        ? const Center(child: CircularProgressIndicator())
+                        : _teams.isEmpty
+                            ? const Center(child: Text('Geen teams gevonden'))
+                            : ListView.builder(
+                                padding: const EdgeInsets.all(16),
+                                itemCount: _teams.length,
+                                itemBuilder: (context, index) {
+                                  final team = _teams[index];
+                                  return Card(
+                                    margin: const EdgeInsets.only(bottom: 12),
+                                    child: ListTile(
+                                      leading: CircleAvatar(
+                                        child: Text(team.displayName[0].toUpperCase()),
+                                      ),
+                                      title: Text(team.displayName),
+                                      subtitle: Text('${team.userIds.length} leden'),
+                                      trailing: Row(
                                         mainAxisSize: MainAxisSize.min,
                                         children: [
-                                          ElevatedButton(
-                                            onPressed: () => _showChangeRoleDialog(e),
-                                            child: const Text('Change role'),
-                                            style: ElevatedButton.styleFrom(backgroundColor: Colors.blueGrey, padding: const EdgeInsets.symmetric(horizontal: 8, vertical: 4), textStyle: const TextStyle(fontSize: 12)),
-                                          ),
-                                          const SizedBox(width: 6),
                                           IconButton(
-                                            onPressed: () => _confirmDeleteUser(e),
-                                            icon: const Icon(Icons.delete_forever, color: Colors.red),
-                                            tooltip: 'Delete user',
-                                            constraints: const BoxConstraints(minHeight: 32, minWidth: 32),
-                                            padding: EdgeInsets.zero,
+                                            icon: const Icon(Icons.edit),
+                                            onPressed: () => showEditTeamDialog(context, team, _loadTeams),
+                                          ),
+                                          IconButton(
+                                            icon: const Icon(Icons.delete, color: Colors.red),
+                                            onPressed: () => confirmDeleteTeam(context, team, _loadTeams),
                                           ),
                                         ],
                                       ),
-                                    ],
-                                  ),
-                                ),
-                              )),
-                        const SizedBox(height: 80),
-                      ],
-                    ),
+                                      onTap: () {
+                                        Navigator.push(
+                                          context,
+                                          MaterialPageRoute(
+                                            builder: (_) => TeamDetailPage(team: team),
+                                          ),
+                                        );
+                                      },
+                                    ),
+                                  );
+                                },
+                              ),
                   ),
                 ),
               ],
@@ -372,188 +559,41 @@ class _MobileLayoutState extends State<MobileLayout> {
           ],
         ),
       ),
+      floatingActionButton: FloatingActionButton(
+        onPressed: () => showCreateTeamDialog(context, _loadTeams),
+        child: const Icon(Icons.add),
+      ),
     );
   }
 }
 
-// ====================== DESKTOP LAYOUT ======================
-class DesktopLayout extends StatefulWidget {
-  const DesktopLayout({super.key});
+
+class DesktopTeamLayout extends StatefulWidget {
+  const DesktopTeamLayout({super.key});
 
   @override
-  State<DesktopLayout> createState() => _DesktopLayoutState();
+  State<DesktopTeamLayout> createState() => _DesktopTeamLayoutState();
 }
 
-class _DesktopLayoutState extends State<DesktopLayout> {
-  List<Team> _Teams = [];
+class _DesktopTeamLayoutState extends State<DesktopTeamLayout> {
+  List<AppTeam> _teams = [];
   bool _loading = true;
 
   @override
   void initState() {
     super.initState();
-    _refresh();
+    _loadTeams();
   }
 
-  Future<void> _refresh() async {
+  Future<void> _loadTeams() async {
     setState(() => _loading = true);
-    final list = await loadTeams();
-    setState(() {
-      _Teams = list;
-      _loading = false;
-    });
-  }
-
-  Future<void> _showChangeRoleDialogDesktop(Team e) async {
-    final roles = ['worker', 'manager'];
-    String selected = e.role;
-
-    await showDialog<void>(
-      context: context,
-      builder: (ctx) => AlertDialog(
-        title: Text('Change role for ${e.name}'),
-        content: StatefulBuilder(
-          builder: (ctx2, setStateDialog) {
-            return DropdownButtonFormField<String>(
-              value: selected,
-              items: roles
-                  .map((r) => DropdownMenuItem(value: r, child: Text(r)))
-                  .toList(),
-              onChanged: (v) => setStateDialog(() => selected = v ?? selected),
-              decoration: const InputDecoration(labelText: 'Role'),
-            );
-          },
-        ),
-        actions: [
-          TextButton(onPressed: () => Navigator.pop(ctx), child: const Text('Cancel')),
-          ElevatedButton(
-            onPressed: () async {
-              Navigator.pop(ctx);
-              if (selected == e.role) return;
-
-              try {
-                await changeUserRole(e.uuid, selected); 
-
-                ScaffoldMessenger.of(context).showSnackBar(
-                  SnackBar(content: Text('Role updated to: $selected')),
-                );
-                _refresh();
-              } catch (err) {
-                ScaffoldMessenger.of(context).showSnackBar(
-                  SnackBar(content: Text('Failed: $err')),
-                );
-              }
-            },
-            child: const Text('Save'),
-          ),
-        ],
-      ),
-    );
-  }
-
-  Future<void> _confirmDeleteUserDesktop(Team e) async {
-    final confirm = await showDialog<bool>(
-      context: context,
-      builder: (ctx) => AlertDialog(
-        title: Text('Delete ${e.name}?'),
-        content: const Text('This will permanently delete the user. Are you sure?'),
-        actions: [
-          TextButton(onPressed: () => Navigator.pop(ctx, false), child: const Text('Cancel')),
-          ElevatedButton(
-            style: ElevatedButton.styleFrom(backgroundColor: Colors.red),
-            onPressed: () => Navigator.pop(ctx, true),
-            child: const Text('Delete'),
-          ),
-        ],
-      ),
-    );
-
-    if (confirm != true) return;
-
-    try {
-      final resp = await supabase.functions.invoke('dynamic-worker', body: {'user_id': e.uuid});
-      if (resp.data == null || resp.data['error'] != null) {
-        final err = resp.data?['error'] ?? 'Unknown error';
-        throw err;
-      }
-
-      if (context.mounted) ScaffoldMessenger.of(context).showSnackBar(SnackBar(content: Text('Deleted ${e.name}')));
-      _refresh();
-    } catch (err) {
-      debugPrint('Delete user failed (desktop): $err');
-      if (context.mounted) ScaffoldMessenger.of(context).showSnackBar(SnackBar(content: Text('Failed: $err')));
+    final teams = await loadAllTeams();
+    if (mounted) {
+      setState(() {
+        _teams = teams;
+        _loading = false;
+      });
     }
-  }
-
-  void _showInviteDialog() {
-    final emailCtrl = TextEditingController();
-    final nameCtrl = TextEditingController();
-    final List<String> roles = ['worker', 'manager'];
-    String? selectedRole = roles.first;
-
-    showDialog(
-      context: context,
-      builder: (ctx) => StatefulBuilder(
-        builder: (context, setStateDialog) => AlertDialog(
-          title: const Text('Nieuw Team'),
-          content: SizedBox(
-            width: 400,
-            child: Column(
-              mainAxisSize: MainAxisSize.min,
-              children: [
-                const SizedBox(height: 12),
-                TextField(
-                  controller: nameCtrl,
-                  decoration: const InputDecoration(labelText: 'Name *'),
-                ),
-              ],
-            ),
-          ),
-          actions: [
-            TextButton(onPressed: () => Navigator.pop(ctx), child: const Text('Cancel')),
-            ElevatedButton(
-              style: ElevatedButton.styleFrom(backgroundColor: Colors.green),
-              onPressed: () async {
-                final email = emailCtrl.text.trim();
-                final name = nameCtrl.text.trim();
-
-                if (email.isEmpty || name.isEmpty || !email.contains('@')) {
-                  ScaffoldMessenger.of(context).showSnackBar(
-                    const SnackBar(content: Text('Please fill all fields with valid data')),
-                  );
-                  return;
-                }
-
-                try {
-                  final response = await supabase.functions.invoke(
-                    'quick-api',
-                    body: {'email': email, 'name': name, 'role': selectedRole},
-                    headers: {
-                      'Content-Type': 'application/json',
-                    },
-                  );
-
-                  if (response.data == null || response.data['error'] != null) {
-                    throw response.data?['error'] ?? 'Unknown error';
-                  }
-
-                  if (ctx.mounted) Navigator.pop(ctx);
-                  ScaffoldMessenger.of(context).showSnackBar(
-                    SnackBar(content: Text('Team added: $name')),
-                  );
-                  _refresh();
-                } catch (e) {
-                  debugPrint('Add Team failed: $e');
-                  ScaffoldMessenger.of(context).showSnackBar(
-                    SnackBar(content: Text('Failed: $e')),
-                  );
-                }
-              },
-              child: const Text('Add'),
-            ),
-          ],
-        ),
-      ),
-    );
   }
 
   @override
@@ -561,172 +601,272 @@ class _DesktopLayoutState extends State<DesktopLayout> {
     return Scaffold(
       backgroundColor: Colors.transparent,
       body: BackgroundContainer(
-        child: Stack(                               
+        child: Column(
           children: [
-            // main content
-            Column(
-              children: [
-                HeaderBar(),
-
-                // body area
-                Expanded(
-                  child: Padding(
-                    padding: const EdgeInsets.all(32),
-                    child: Row(
-                      crossAxisAlignment: CrossAxisAlignment.start,
-                      children: [
-                        // left side: action card
-                        SizedBox(
-                          width: 340,
-                          child: Card(
-                            child: Padding(
-                              padding: const EdgeInsets.all(32),
-                              child: Column(
-                                children: [
-                                  const Text(
-                                    'Team manager',
-                                    style: TextStyle(fontSize: 28, fontWeight: FontWeight.bold),
-                                  ),
-                                  const SizedBox(height: 40),
-                                  ElevatedButton.icon(
-                                    onPressed: _showInviteDialog,
-                                    icon: const Icon(Icons.person_add, size: 32),
-                                    label: const Text(
-                                      'Add Team',
-                                      style: TextStyle(fontSize: 20),
-                                    ),
-                                    style: ElevatedButton.styleFrom(
-                                      backgroundColor: Colors.green,
-                                      padding: const EdgeInsets.symmetric(vertical: 20),
-                                      minimumSize: const Size(double.infinity, 64),
-                                    ),
-                                  ),
-                                ],
+            HeaderBar(),
+            Expanded(
+              child: Padding(
+                padding: const EdgeInsets.all(32),
+                child: Row(
+                  crossAxisAlignment: CrossAxisAlignment.start,
+                  children: [
+                    SizedBox(
+                      width: 340,
+                      child: Card(
+                        child: Padding(
+                          padding: const EdgeInsets.all(32),
+                          child: Column(
+                            children: [
+                              const Text(
+                                'Team beheer',
+                                style: TextStyle(fontSize: 28, fontWeight: FontWeight.bold),
+                              ),
+                              const SizedBox(height: 40),
+                              ElevatedButton.icon(
+                                icon: const Icon(Icons.add),
+                                label: const Text('Nieuw team'),
+                                style: ElevatedButton.styleFrom(
+                                  backgroundColor: Colors.green,
+                                  minimumSize: const Size(double.infinity, 56),
+                                ),
+                                onPressed: () => showCreateTeamDialog(context, _loadTeams),
+                              ),
+                            ],
+                          ),
+                        ),
+                      ),
+                    ),
+                    const SizedBox(width: 32),
+                    Expanded(
+                      child: Card(
+                        child: Column(
+                          crossAxisAlignment: CrossAxisAlignment.start,
+                          children: [
+                            const Padding(
+                              padding: EdgeInsets.fromLTRB(32, 32, 32, 16),
+                              child: Text(
+                                'Teams',
+                                style: TextStyle(fontSize: 26, fontWeight: FontWeight.bold),
                               ),
                             ),
-                          ),
-                        ),
-
-                        const SizedBox(width: 32),
-
-                        // right side: Team list
-                        Expanded(
-                          child: Card(
-                            elevation: 4,
-                            child: Column(
-                              crossAxisAlignment: CrossAxisAlignment.start,
-                              children: [
-                                
-                                const Padding(
-                                  padding: EdgeInsets.fromLTRB(32, 32, 32, 16),
-                                  child: Text(
-                                    'Team list',
-                                    style: TextStyle(fontSize: 26, fontWeight: FontWeight.bold),
-                                  ),
-                                ),
-
-                                // list area
-                                Expanded(
-                                  child: _loading
-                                      ? const Center(child: CircularProgressIndicator())
-                                      : _Teams.isEmpty
-                                          ? const Center(
-                                              child: Text(
-                                                'No Teams found',
-                                                style: TextStyle(fontSize: 20),
+                            Expanded(
+                              child: _loading
+                                  ? const Center(child: CircularProgressIndicator())
+                                  : _teams.isEmpty
+                                      ? const Center(child: Text('Geen teams gevonden'))
+                                      : ListView.builder(
+                                          padding: const EdgeInsets.symmetric(horizontal: 16),
+                                          itemCount: _teams.length,
+                                          itemBuilder: (context, index) {
+                                            final team = _teams[index];
+                                            return Card(
+                                              child: ListTile(
+                                                leading: CircleAvatar(
+                                                  child: Text(team.displayName[0].toUpperCase()),
+                                                ),
+                                                title: Text(team.displayName),
+                                                subtitle: Text('${team.userIds.length} leden • Manager: ${team.managerId?.substring(0, 8) ?? "?"}'),
+                                                trailing: Row(
+                                                  mainAxisSize: MainAxisSize.min,
+                                                  children: [
+                                                    IconButton(
+                                                      icon: const Icon(Icons.edit),
+                                                      onPressed: () => showEditTeamDialog(context, team, _loadTeams),
+                                                    ),
+                                                    IconButton(
+                                                      icon: const Icon(Icons.delete, color: Colors.red),
+                                                      onPressed: () => confirmDeleteTeam(context, team, _loadTeams),
+                                                    ),
+                                                    IconButton(
+                                                      icon: const Icon(Icons.add),
+                                                      onPressed: () => _showAddMembersDialog(context, team, _loadTeams),
+                                                    ),
+                                                    IconButton(
+                                                      icon: const Icon(Icons.remove),
+                                                      onPressed: () => _showRemoveMembersDialog(context, team, _loadTeams),
+                                          
+                    
+                                                    ),
+                                                  ],
+                                                ),
+                                                onTap: () {
+                                                  Navigator.push(
+                                                    context,
+                                                    MaterialPageRoute(
+                                                      builder: (_) => TeamDetailPage(team: team),
+                                                    ),
+                                                  );
+                                                },
                                               ),
-                                            )
-                                          : ListView.separated(
-                                              padding: const EdgeInsets.fromLTRB(32, 0, 32, 32),
-                                              itemCount: _Teams.length,
-                                              separatorBuilder: (_, __) => const SizedBox(height: 12),
-                                              itemBuilder: (_, i) {
-                                                final e = _Teams[i];
-                                                return Card(
-                                                  child: ListTile(
-                                                    contentPadding: const EdgeInsets.symmetric(horizontal: 20, vertical: 8),
-                                                    leading: CircleAvatar(
-                                                      radius: 28,
-                                                      child: Text(
-                                                        e.name.isNotEmpty ? e.name[0].toUpperCase() : e.email[0],
-                                                        style: const TextStyle(fontSize: 22, fontWeight: FontWeight.bold),
-                                                      ),
-                                                    ),
-                                                    title: Text(
-                                                      e.name.isNotEmpty ? e.name: 'Unnamed',
-                                                      style: const TextStyle(fontSize: 20, fontWeight: FontWeight.w600),
-                                                    ),
-                                                    subtitle: Column(
-                                                      crossAxisAlignment: CrossAxisAlignment.start,
-                                                      children: [
-                                                        Text(
-                                                          e.email,
-                                                          style: const TextStyle(fontSize: 16),
-                                                        ),
-                                                        Text(
-                                                          e.role,
-                                                          style: const TextStyle(fontSize: 16),
-                                                        ),
-                                                      ],
-                                                    ),
-                                                    trailing: Column(
-                                                      mainAxisSize: MainAxisSize.min,
-                                                      crossAxisAlignment: CrossAxisAlignment.end,
-                                                      children: [
-                                                        Text(
-                                                          e.uuid.substring(0, 8),
-                                                          style: const TextStyle(fontSize: 11, color: Colors.grey),
-                                                        ),
-                                                        const SizedBox(height: 0),
-                                                        Row(
-                                                          mainAxisSize: MainAxisSize.min,
-                                                          children: [
-                                                            ElevatedButton(
-                                                              onPressed: () => _showChangeRoleDialogDesktop(e),
-                                                              child: const Text('Change role'),
-                                                              style: ElevatedButton.styleFrom(
-                                                                backgroundColor: Colors.blueGrey,
-                                                                padding: const EdgeInsets.symmetric(horizontal: 16, vertical: 8),
-                                                                textStyle: const TextStyle(fontSize: 12),
-                                                                                                                                        
-                                                              ),
-                                                            ),
-                                                            SizedBox(width: 8),
-                                                            IconButton(
-                                                              onPressed: () async => await _confirmDeleteUserDesktop(e),
-                                                              icon: const Icon(Icons.delete_forever, color: Colors.red),
-                                                              tooltip: 'Delete user',
-                                                              constraints: const BoxConstraints(minHeight: 32, minWidth: 32),
-                                                              padding: EdgeInsets.zero,
-                                                            ),
-                                                          ],
-                                                        ),
-                                                      ],
-                                                    ),
-                                                  ),
-                                                );
-                                              },
-                                            ),
-                                ),
-                              ],
+                                            );
+                                          },
+                                        ),
                             ),
-                          ),
+                          ],
                         ),
-                      ],
+                      ),
                     ),
-                  ),
+                  ],
                 ),
-              ],
-            ),
-
-            
-            const Align(
-              alignment: Alignment.bottomCenter,
-              child: Padding(
-                padding: EdgeInsets.only(bottom: 24),
-                child: Navbar(),
               ),
             ),
+            Padding(
+              padding: const EdgeInsets.only(bottom: 24),
+              child: Navbar(),
+            ),
+          ],
+        ),
+      ),
+    );
+  }
+}
+
+class TeamDetailPage extends StatefulWidget {
+  final AppTeam team;
+
+  const TeamDetailPage({
+    super.key,
+    required this.team,
+  });
+
+  @override
+  State<TeamDetailPage> createState() => _TeamDetailPageState();
+}
+
+class _TeamDetailPageState extends State<TeamDetailPage> {
+  List<Map<String, dynamic>> _members = [];
+  bool _loadingMembers = true;
+  String? _error;
+
+  @override
+  void initState() {
+    super.initState();
+    _loadMembers();
+  }
+
+  Future<void> _loadMembers() async {
+    if (widget.team.userIds.isEmpty) {
+      setState(() => _loadingMembers = false);
+      return;
+    }
+
+    try {
+      final response = await supabase
+          .from('profiles')  
+          .select('id, name, email')  
+          .inFilter('id', widget.team.userIds);
+
+      setState(() {
+        _members = List<Map<String, dynamic>>.from(response);
+        _loadingMembers = false;
+      });
+    } catch (e, stack) {
+      debugPrint('Fout bij laden leden: $e\n$stack');
+      setState(() {
+        _error = 'Kon teamleden niet laden: $e';
+        _loadingMembers = false;
+      });
+    }
+  }
+
+  String _getName(Map<String, dynamic> profile) {
+    
+    return profile['full_name'] as String? ??
+        profile['name'] as String? ??
+        profile['display_name'] as String? ??
+        profile['email'] as String? ??
+        'Onbekend (${(profile['id'] as String).substring(0, 8)}...)';
+  }
+
+  @override
+  Widget build(BuildContext context) {
+    return Scaffold(
+      appBar: AppBar(
+        title: Text(widget.team.name ?? 'Team ${widget.team.id.substring(0, 8)}'),
+      ),
+      body: Padding(
+        padding: const EdgeInsets.all(16.0),
+        child: Column(
+          crossAxisAlignment: CrossAxisAlignment.start,
+          children: [
+            Card(
+              child: Padding(
+                padding: const EdgeInsets.all(16),
+                child: Column(
+                  crossAxisAlignment: CrossAxisAlignment.start,
+                  children: [
+                    Text(
+                      widget.team.name ?? 'Naamloos team',
+                      style: Theme.of(context).textTheme.headlineSmall,
+                    ),
+                    const SizedBox(height: 8),
+                    Text('ID: ${widget.team.id}'),
+                    if (widget.team.managerId != null)
+                      Text('Manager: ${widget.team.managerId!.substring(0, 8)}...'),
+                    Text('Aangemaakt: ${widget.team.createdAt?.toString().split(' ').first ?? 'onbekend'}'),
+                    Text('Aantal leden: ${widget.team.userIds.length}'),
+                  ],
+                ),
+              ),
+            ),
+
+            const SizedBox(height: 24),
+            const Text(
+              'Teamleden',
+              style: TextStyle(fontSize: 18, fontWeight: FontWeight.bold),
+            ),
+            const SizedBox(height: 8),
+
+            if (_loadingMembers)
+              const Center(child: CircularProgressIndicator())
+            else if (_error != null)
+              Center(
+                child: Padding(
+                  padding: const EdgeInsets.all(32),
+                  child: Text(
+                    _error!,
+                    style: const TextStyle(color: Colors.red),
+                    textAlign: TextAlign.center,
+                  ),
+                ),
+              )
+            else if (widget.team.userIds.isEmpty)
+              const Center(
+                child: Padding(
+                  padding: EdgeInsets.all(32),
+                  child: Text('Dit team heeft nog geen leden'),
+                ),
+              )
+            else if (_members.isEmpty)
+              const Center(
+                child: Padding(
+                  padding: EdgeInsets.all(32),
+                  child: Text('Geen profielinformatie gevonden voor deze leden'),
+                ),
+              )
+            else
+              Expanded(
+                child: ListView.builder(
+                  itemCount: _members.length,
+                  itemBuilder: (context, index) {
+                    final member = _members[index];
+                    final name = _getName(member);
+                    final email = member['email'] as String?;
+
+                    return ListTile(
+                      leading: CircleAvatar(
+                        child: Text(name.isNotEmpty ? name[0].toUpperCase() : '?'),
+                      ),
+                      title: Text(name),
+                      subtitle: email != null ? Text(email) : null,
+                      trailing: Text(
+                        (member['id'] as String).substring(0, 8),
+                        style: const TextStyle(fontSize: 12, color: Colors.grey),
+                      ),
+                    );
+                  },
+                ),
+              ),
           ],
         ),
       ),
