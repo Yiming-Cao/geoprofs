@@ -869,6 +869,17 @@ class _MobileLayoutState extends State<MobileLayout> {
   }
 }
 
+extension DateTimeExtension on DateTime {
+  /// 计算当前日期所在年份的周数（ISO 周，1-53）
+  int get weekOfYear {
+    final firstDayOfYear = DateTime(year, 1, 1);
+    final daysOffset = firstDayOfYear.weekday - 1; // 周一为1
+    final firstMonday = firstDayOfYear.add(Duration(days: (8 - daysOffset) % 7));
+    final diff = difference(firstMonday).inDays;
+    return (diff / 7).floor() + 1;
+  }
+}
+
 class DesktopLayout extends StatefulWidget {
   const DesktopLayout({super.key});
 
@@ -893,6 +904,10 @@ class _DesktopLayoutState extends State<DesktopLayout> {
   bool _loadingDepartmentLeave = false;
   List<Map<String, dynamic>> _departmentLeaveSchedule = [];
   String? _userTeamId;
+  Map<String, String> _userNames = {};  // 类成员，保存所有成员名字
+  DateTime _currentWeekStart = DateTime(2026, 1, 16);  // 初始周一，后面动态
+
+  
 
   @override
   void initState() {
@@ -1027,193 +1042,115 @@ Future<void> _loadUserTeam() async {
   bool _departmentLoadingInProgress = false;
 
   Future<void> _loadDepartmentLeaveSchedule() async {
-  if (_userTeamId == null || _userTeamId!.isEmpty) {
-    debugPrint('No team ID, skip loading department leave');
-    return;
-  }
+    if (_userTeamId == null || _userTeamId!.isEmpty) return;
 
-  if (_departmentLoadingInProgress) {
-    debugPrint('Department loading in progress, skip duplicate call');
-    return;
-  }
+    setState(() => _loadingDepartmentLeave = true);
+    try {
+      // 1. Get team and its members
+      final teamRes = await _runQuery(
+        supabase
+            .from('teams')
+            .select('id,name,users,manager')
+            .eq('id', _userTeamId!),
+      );
 
-  _departmentLoadingInProgress = true;
-  if (mounted) setState(() => _loadingDepartmentLeave = true);
-
-  debugPrint('Starting department leave load for team: $_userTeamId');
-
-  try {
-    // 1. Get team and its members
-    final teamRes = await _runQuery(
-      supabase
-          .from('teams')
-          .select('id,name,users,manager')
-          .eq('id', _userTeamId!),
-    );
-
-    debugPrint('teamRes: $teamRes');
-
-    Map teamData = {};
-    if (teamRes is Map) {
-      teamData = teamRes;
-    } else if (teamRes is List && teamRes.isNotEmpty) {
-      teamData = teamRes.first as Map;
-    }
-
-    List<String> departmentUserIds = [];
-
-    final members = teamData['users'];
-    if (members is List) {
-      departmentUserIds = members.map((m) => m.toString()).toList();
-    } else if (members is String) {
-      try {
-        final parsed = jsonDecode(members);
-        if (parsed is List) {
-          departmentUserIds = parsed.map((m) => m.toString()).toList();
-        }
-      } catch (e) {
-        debugPrint('Parse users failed: $e');
+      Map teamData = teamRes is Map ? teamRes : {};
+      List<String> departmentUserIds = [];
+      
+      // Extract team members from users field
+      final members = teamData['users'];
+      if (members is List) {
+        departmentUserIds = members.map((m) => m.toString()).toList();
+      } else if (members is String) {
+        try {
+          final parsed = jsonDecode(members);
+          if (parsed is List) {
+            departmentUserIds = parsed.map((m) => m.toString()).toList();
+          }
+        } catch (_) {}
       }
-    }
-
-    final managerId = teamData['manager']?.toString();
-    if (managerId != null && !departmentUserIds.contains(managerId)) {
-      departmentUserIds.add(managerId);
-    }
-
-    debugPrint('departmentUserIds: $departmentUserIds');
-
-    if (departmentUserIds.isEmpty) {
-      debugPrint('No users in team, set empty schedule');
-      if (mounted) setState(() {
-        _departmentLeaveSchedule = [];
-        _loadingDepartmentLeave = false;
-      });
-      _departmentLoadingInProgress = false;
-      return;
-    }
-
-    // 2. Get profiles for these members
-    final profilesRes = await _runQuery(
-      supabase
-          .from('profiles')
-          .select('id,name')
-          .inFilter('id', departmentUserIds),
-    );
-
-    debugPrint('profilesRes: $profilesRes');
-
-    List<String> teamMemberIds = [];
-    List<Map<String, dynamic>> profilesList = [];
-
-    if (profilesRes is List) {
-      profilesList = profilesRes.cast<Map<String, dynamic>>();
-    } else if (profilesRes is Map<String, dynamic>) {
-      profilesList = [profilesRes];
-    } else if (profilesRes is Map && profilesRes.containsKey('data')) {
-      final data = profilesRes['data'];
-      if (data is List) {
-        profilesList = data.cast<Map<String, dynamic>>();
-      } else if (data is Map<String, dynamic>) {
-        profilesList = [data];
+      
+      // Add manager if not in users
+      final managerId = teamData['manager']?.toString();
+      if (managerId != null && !departmentUserIds.contains(managerId)) {
+        departmentUserIds.add(managerId);
       }
-    }
 
-    teamMemberIds = profilesList
-        .map((p) => p['id']?.toString() ?? '')
-        .where((id) => id.isNotEmpty && id.length == 36)  // 过滤无效 uuid
-        .toList();
-
-    debugPrint('teamMemberIds: $teamMemberIds');
-
-    Map<String, String> userNames = {};
-
-    for (var p in profilesList) {
-      final pm = p as Map<String, dynamic>;
-      final uid = pm['id'] as String? ?? '';
-      final name = pm['name'] as String? ?? uid.substring(0, 8) + '...';
-      if (uid.isNotEmpty) {
-        userNames[uid] = name;
+      if (departmentUserIds.isEmpty) {
+        setState(() {
+          _departmentLeaveSchedule = [];
+          _loadingDepartmentLeave = false;
+        });
+        return;
       }
-    }
-    if (teamMemberIds.isEmpty) {
-      debugPrint('No valid profiles found, but continue with departmentUserIds as fallback');
-      // 临时 fallback：用 departmentUserIds（即使没 profile 名字，也能查 verlof）
-      teamMemberIds = departmentUserIds;
+
+      // 2. Get names from auth.users (display_name in user_metadata)
+      _userNames = {};  // 清空旧数据
+
       for (var uid in departmentUserIds) {
-        userNames[uid] = uid.substring(0, 8) + '...';
+        try {
+          final userRes = await supabase.auth.admin.getUserById(uid);
+          _userNames[uid] = userRes.user?.userMetadata?['display_name'] as String? ?? uid.substring(0, 8) + '...';
+        } catch (e) {
+          _userNames[uid] = uid.substring(0, 8) + '...';
+          debugPrint('Failed to get display_name for $uid: $e');
+        }
+      }
+
+      // 3. Get all leave requests for team members
+      final leaveRes = await _runQuery(
+        supabase
+            .from('verlof')
+            .select()
+            .inFilter('user_id', departmentUserIds),
+      );
+
+      List<Map<String, dynamic>> leaveRequests = [];
+      if (leaveRes is List) {
+        leaveRequests = (leaveRes as List)
+            .map((e) => Map<String, dynamic>.from(e as Map))
+            .toList();
+      } else if (leaveRes is Map && leaveRes.containsKey('data')) {
+        leaveRequests = ((leaveRes['data'] ?? []) as List)
+            .map((e) => Map<String, dynamic>.from(e as Map))
+            .toList();
+      }
+
+      // Normalize and assign applicant name
+      _departmentLeaveSchedule = leaveRequests.map((leave) {
+        final uid = leave['user_id']?.toString() ?? '';
+        leave['applicant'] = _userNames[uid] ?? uid;
+
+        leave['start_date'] = leave['start']?.toString() ?? '';
+        leave['end_date'] = leave['end_time']?.toString() ?? '';
+        leave['days'] = leave['days_count'] ?? 0;
+        leave['status'] = leave['verlof_state']?.toString() ?? 'pending';
+        leave['verlof_type'] = leave['verlof_type'] ?? 'onbekend';
+
+        return leave;
+      }).toList();
+
+      // Sort by start date
+      _departmentLeaveSchedule.sort((a, b) {
+        final dateA = DateTime.tryParse(a['start_date'] ?? '');
+        final dateB = DateTime.tryParse(b['start_date'] ?? '');
+        if (dateA == null || dateB == null) return 0;
+        return dateA.compareTo(dateB);
+      });
+
+      if (mounted) {
+        setState(() => _loadingDepartmentLeave = false);
+      }
+    } catch (e, st) {
+      debugPrint('Load department leave schedule failed: $e\n$st');
+      if (mounted) {
+        setState(() {
+          _departmentLeaveSchedule = [];
+          _loadingDepartmentLeave = false;
+        });
       }
     }
-
-    // 3. Get all leave requests for team members
-    final leaveRes = await _runQuery(
-      supabase
-          .from('verlof')
-          .select()
-          .inFilter('user_id', teamMemberIds)
-          .order('start', ascending: true),
-    );
-
-    debugPrint('leaveRes: $leaveRes');
-
-    List<Map<String, dynamic>> leaveRequests = [];
-    List leaveList = [];
-
-    if (leaveRes is List) {
-      leaveList = leaveRes;
-    } else if (leaveRes is Map && leaveRes.containsKey('data')) {
-      leaveList = (leaveRes['data'] ?? []) as List;
-    } else if (leaveRes != null) {
-      leaveList = [leaveRes];
-    }
-
-    leaveRequests = leaveList
-        .map((e) => Map<String, dynamic>.from(e as Map))
-        .toList();
-
-    debugPrint('Parsed leaveRequests count: ${leaveRequests.length}');
-
-    // 4. Build name map from profiles
-    for (var p in profilesList) {
-      final pm = Map<String, dynamic>.from(p);
-      userNames[pm['id'].toString()] = pm['name']?.toString() ?? pm['id'].toString().substring(0, 8) + '...';
-    }
-
-    // 5. Normalize leave data
-    _departmentLeaveSchedule = leaveRequests.map((leave) {
-      final uid = leave['user_id']?.toString() ?? '';
-
-      leave['start_date'] = leave['start']?.toString() ?? '';
-      leave['end_date'] = leave['end_time']?.toString() ?? '';
-
-      leave['days'] = leave['days_count'] ?? 0;
-
-      leave['applicant'] = userNames[uid] ?? uid;
-
-      final verlofState = leave['verlof_state']?.toString() ?? 'pending';
-      leave['status'] = verlofState;
-
-      leave['verlof_type'] = leave['verlof_type'] ?? 'onbekend';
-
-      return leave;
-    }).toList();
-
-    // Sort by start date
-    _departmentLeaveSchedule.sort((a, b) {
-      final dateA = DateTime.tryParse(a['start_date'] ?? '');
-      final dateB = DateTime.tryParse(b['start_date'] ?? '');
-      if (dateA == null || dateB == null) return 0;
-      return dateA.compareTo(dateB);
-    });
-
-    debugPrint('Final department schedule count: ${_departmentLeaveSchedule.length}');
-  } catch (e, st) {
-    debugPrint('Load department leave schedule failed: $e\n$st');
-  } finally {
-    _departmentLoadingInProgress = false;
-    if (mounted) setState(() => _loadingDepartmentLeave = false);
   }
-}
 
   // 兼容不同版本的 Postgrest/PostgrestFilterBuilder 的执行方法
   Future<dynamic> _runQuery(dynamic builder) async {
@@ -1355,75 +1292,76 @@ Future<void> _loadUserTeam() async {
   }
 
   List<DataRow> _buildEmployeeRows() {
-  // 先按 applicant 分组（同一个员工的多条请假合并）
-  Map<String, List<Map<String, dynamic>>> grouped = {};
-  for (var leave in _departmentLeaveSchedule) {
-    final applicant = leave['applicant'] ?? 'Onbekend';
-    grouped.putIfAbsent(applicant, () => []);
-    grouped[applicant]!.add(leave);
-  }
+    // 所有成员（从 departmentUserIds + userNames）
+    List<String> allMembers = _userNames.keys.toList();
 
-  List<DataRow> rows = [];
+    List<DataRow> rows = [];
 
-  grouped.forEach((name, leaves) {
-    // 剩余天数（从数据库或计算，这里先用固定，后面从 leave_balance 表取）
-    int vakantie = 25;  // 假设
-    int persoonlijk = 5;
-    int ziek = 3;
+    for (var uid in allMembers) {
+      final name = _userNames[uid] ?? uid.substring(0, 8) + '...';
 
-    // 每天的状态标记
-    List<String> statusCells = List.filled(7, '·');  // 默认上班
+      // 剩余天数（mock，后面从 leave_balance 查）
+      int vakantie = 25;
+      int persoonlijk = 5;
+      int ziek = 3;
 
-    for (var leave in leaves) {
-      final start = DateTime.tryParse(leave['start_date'] ?? '');
-      final end = DateTime.tryParse(leave['end_date'] ?? '');
-      if (start == null || end == null) continue;
+      // 本周天数
+      final weekDays = List.generate(7, (i) => _currentWeekStart.add(Duration(days: i)));
 
-      final status = leave['status']?.toLowerCase() ?? 'pending';
-      String mark = 'v';  // 默认 v
-      if (status == 'sick' || status == 'ziek') mark = 'z';
-      if (status == 'persoonlijk') mark = 'p';
+      List<String> marks = List.filled(7, '·');
 
-      // 简单假设当前周（你需要根据当前周日期计算）
-      // 这里先用固定周一到周日演示，实际需根据当前显示周匹配日期
-      for (int i = 0; i < 7; i++) {
-        // 假设周一为 start 的那天，实际需计算
-        statusCells[i] = mark;
-      }
-    }
+      // 过滤这个成员的请假
+      final memberLeaves = _departmentLeaveSchedule.where((leave) => leave['user_id']?.toString() == uid).toList();
 
-    rows.add(DataRow(cells: [
-      DataCell(Text(name)),
-      DataCell(Text('$vakantie')),
-      DataCell(Text('$persoonlijk')),
-      DataCell(Text('$ziek')),
-      ...statusCells.map((s) {
-        Color bg = Colors.transparent;
-        Color textColor = Colors.black;
-        if (s == 'z') {
-          bg = Colors.red.withOpacity(0.3);
-          textColor = Colors.red;
-        } else if (s == 'v') {
-          bg = Colors.green.withOpacity(0.3);
-        } else if (s == 'p') {
-          bg = Colors.blue.withOpacity(0.3);
-        } else if (s == 'w') {
-          bg = Colors.grey;
+      for (var leave in memberLeaves) {
+        final start = DateTime.tryParse(leave['start_date'] ?? '');
+        final end = DateTime.tryParse(leave['end_date'] ?? '');
+        if (start == null || end == null) continue;
+
+        String mark = 'v'; // 默认
+        if (leave['verlof_type'] == 'ziek') mark = 'z';
+        if (leave['verlof_type'] == 'persoonlijk') mark = 'p';
+
+        for (int i = 0; i < 7; i++) {
+          final day = weekDays[i];
+          if (day.isAfter(start.subtract(const Duration(days: 1))) && day.isBefore(end.add(const Duration(days: 1)))) {
+            marks[i] = mark;
+          }
         }
+      }
 
-        return DataCell(
-          Container(
-            padding: const EdgeInsets.all(8),
-            decoration: BoxDecoration(color: bg, borderRadius: BorderRadius.circular(4)),
-            child: Center(child: Text(s, style: TextStyle(color: textColor))),
-          ),
-        );
-      }),
-    ]));
-  });
+      rows.add(DataRow(cells: [
+        DataCell(Text(name)),
+        DataCell(Text('$vakantie')),
+        DataCell(Text('$persoonlijk')),
+        DataCell(Text('$ziek')),
+        ...marks.map((m) {
+          Color? color;
+          if (m == 'z') color = Colors.red;
+          if (m == 'v') color = Colors.green;
+          if (m == 'p') color = Colors.blue;
+          if (m == '·') color = Colors.grey;
 
-  return rows;
-}
+          return DataCell(
+            Container(
+              alignment: Alignment.center,  // 居中
+              padding: const EdgeInsets.symmetric(horizontal: 8, vertical: 4),
+              decoration: BoxDecoration(
+                color: color?.withOpacity(0.2),
+                borderRadius: BorderRadius.circular(4),
+              ),
+              child: Text(
+                m,
+                style: TextStyle(color: color),
+              ),
+            )
+          );
+        }),
+      ]));
+    };
+
+    return rows;
+  }
 
   // 在右侧 content 中加入 leave 显示
   Widget _buildRightContent() {
@@ -1431,46 +1369,55 @@ Future<void> _loadUserTeam() async {
       if (_loadingDepartmentLeave) {
         return const Center(child: CircularProgressIndicator());
       }
-      if (_departmentLeaveSchedule.isEmpty) {
-        return Center(
-          child: Padding(
-            padding: const EdgeInsets.all(24.0),
-            child: Text(
-              'Geen afdelingsverlofschema beschikbaar.',
-              style: TextStyle(color: Colors.black54),
-            ),
-          ),
-        );
-      }
 
       return Padding(
-        padding: const EdgeInsets.all(16.0),
+        padding: const EdgeInsets.all(12.0),
         child: Column(
           crossAxisAlignment: CrossAxisAlignment.start,
-            children: [
-              Row(
-                mainAxisAlignment: MainAxisAlignment.spaceBetween,
-                children: [
-                  Text(
+          children: [
+            Row(
+              mainAxisAlignment: MainAxisAlignment.spaceBetween,
+              children: [
+                Text(
                   'Verlofschema: $_userDepartment',
-                  style: const TextStyle(fontSize: 20, fontWeight: FontWeight.bold),
-                  ),
-                  Row(
-                    children: [
-                      IconButton(icon: const Icon(Icons.chevron_left), onPressed: () {}),  // 后面实现翻周
-                      const Text('Week 3 • 16-22 jan 2026'), 
-                      IconButton(icon: const Icon(Icons.chevron_right), onPressed: () {}), // 动态日期
-                    ],
-                  ),
-                ],
-              ),
-              const SizedBox(height: 16),
-              SingleChildScrollView(
+                  style: const TextStyle(fontSize: 18, fontWeight: FontWeight.bold),
+                ),
+                Row(
+                  children: [
+                    IconButton(
+                      icon: const Icon(Icons.chevron_left),
+                      onPressed: () {
+                        setState(() {
+                          _currentWeekStart = _currentWeekStart.subtract(const Duration(days: 7));
+                        });
+                        _loadDepartmentLeaveSchedule();  // 刷新数据
+                      },
+                    ),
+                    Text(
+                      'Week ${_currentWeekStart.weekOfYear} • ${_currentWeekStart.toLocal().toString().split(' ')[0]} - ${_currentWeekStart.add(const Duration(days: 6)).toLocal().toString().split(' ')[0]}',
+                    ),
+                    IconButton(
+                      icon: const Icon(Icons.chevron_right),
+                      onPressed: () {
+                        setState(() {
+                          _currentWeekStart = _currentWeekStart.add(const Duration(days: 7));
+                        });
+                        _loadDepartmentLeaveSchedule();  // 刷新数据
+                      },
+                    ),
+                  ],
+                ),
+              ],
+            ),
+            const SizedBox(height: 16),
+            Expanded(
+              child: SingleChildScrollView(
                 scrollDirection: Axis.horizontal,
                 child: DataTable(
-                  columnSpacing: 20,
-                  headingRowColor: WidgetStateProperty.all(Colors.grey[200]),
-                  columns: const [
+                  columnSpacing: 40, // 调整间距
+                  headingRowHeight: 48,
+                  dataRowHeight: 48,
+                  columns: const <DataColumn>[
                     DataColumn(label: Text('Name')),
                     DataColumn(label: Text('Vakantie')),
                     DataColumn(label: Text('Persoonlijk')),
@@ -1483,13 +1430,14 @@ Future<void> _loadUserTeam() async {
                     DataColumn(label: Text('Sa')),
                     DataColumn(label: Text('Su')),
                   ],
-                  rows: _buildEmployeeRows(),  // 下面定义
+                  rows: _buildEmployeeRows(),
                 ),
               ),
-            ],
-          ),
-        );
-      }
+            ),
+          ],
+        ),
+      );
+    }
 
     if (_selectedSection == _Section.leave) {
       if (_loadingLeave) return const Center(child: CircularProgressIndicator());
